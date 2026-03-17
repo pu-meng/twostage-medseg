@@ -46,26 +46,28 @@ python -m twostage.eval_twostage \
 
 训练命令
 
+two-stage  的tumor的训练命令
+workdir = os.path.join(args.exp_root, args.exp_name, "train", timestamp)
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --medseg_root /home/pumengyu/medseg_project \
   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/experiments_twostage \
-  --exp_name tumor_roi_dynunet \
-  --model swinunetr \
-  --epochs 200 \
+  --exp_root /home/pumengyu/experiments/twostage \
+  --exp_name tumor_dynunet \
+  --model dynunet \
+  --epochs 300 \
   --batch_size 1 \
   --lr 0.003 \
   --patch 96 96 96 \
   --val_patch 96 96 96 \
   --sw_batch_size 1 \
-  --val_every 6 \
+  --val_every 3 \
   --num_workers 2 \
   --amp \
   --loss dicefocal \
   --overlap 0.5 \
-  --repeats 3 \
-  --tumor_ratios 0.1 0.9 \
+  --repeats 6 \
+  --tumor_ratios 0.05 0.95 \
   --margin 8 \
   --init_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
 
@@ -76,7 +78,7 @@ python scripts/eval_twostage.py \
 --medseg_root /home/pumengyu/medseg_project \
 --preprocessed_root /home/pumengyu/Task03_Liver_pt \
 --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
---stage2_ckpt /home/pumengyu/experiments_twostage/tumor_roi_dynunet/train/03-15-20-25-49/best.pt \
+--stage2_ckpt /home/pumengyu/experiments/experiments_twostage/tumor_roi_dynunet/train/03-16-22-13-45/best.pt \
 --stage1_model dynunet \
 --stage2_model swinunetr \
 --stage1_patch 144 144 144 \
@@ -87,5 +89,5 @@ python scripts/eval_twostage.py \
 --split test \
 --save_vis \
 --vis_n 10 \
---save_dir /home/pumengyu/experiments/experiments_twostage_eval
+--save_dir /home/pumengyu/experiments/experiments_twostage/eval
 

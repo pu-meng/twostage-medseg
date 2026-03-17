@@ -18,6 +18,7 @@ class TrainLoggerTwoStage:
     def __init__(self, workdir: str):
         self.csv_path = os.path.join(workdir, "log.csv")
         self.txt_path = os.path.join(workdir, "log.txt")
+        self.workdir = os.path.abspath(workdir)
         self.fieldnames = [
             "time",
             "epoch",
@@ -86,3 +87,14 @@ class TrainLoggerTwoStage:
 
         with open(self.txt_path, "a", encoding="utf-8") as f:
             f.write(line)
+
+    def log_extra(self, epoch: int, **kwargs):
+        """记录额外的键值对到 extra_log.csv"""
+
+        path = os.path.join(self.workdir, "extra_log.csv")
+        write_header = not os.path.exists(path)
+        with open(path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["epoch"] + list(kwargs.keys()))
+            if write_header:
+                writer.writeheader()
+            writer.writerow({"epoch": epoch, **kwargs})

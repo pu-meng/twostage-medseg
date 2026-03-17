@@ -9,6 +9,31 @@ from datetime import datetime
 
 import torch
 from torch.utils.data import DataLoader
+from medseg.data.dataset_offline import load_pt_paths, split_three_ways
+from medseg.data.transforms_offline import (
+    build_train_transforms,
+    build_val_transforms,
+)
+from medseg.engine.train_eval import train_one_epoch_binary, validate_sliding_window
+from medseg.models.build_model import build_model
+
+from medseg.engine.adaptive_loss import (
+    train_one_epoch_binary_learnable,
+    LearnableWeightedLoss,
+)
+
+
+from medseg.utils.ckpt import (
+    load_ckpt_full,
+    save_ckpt_full,
+)
+
+from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
+
+from medseg.utils.train_utils import set_seed
+from twostage.train_logger import TrainLoggerTwoStage
+from twostage.dataset_tumor_roi import TumorROIDataset
+from twostage.train_eval_tumor import tumor_metrics_from_val_result
 
 """
 os.path.abspath(medseg_root)
@@ -49,7 +74,9 @@ def parse_args():
     p.add_argument("--sw_batch_size", type=int, default=1)
     p.add_argument("--overlap", type=float, default=0.5)
     p.add_argument("--num_workers", type=int, default=2)
+
     p.add_argument("--prefetch_factor", type=int, default=4)
+
     p.add_argument("--repeats", type=int, default=3)
     p.add_argument("--amp", action="store_true")
     p.add_argument(
@@ -63,6 +90,12 @@ def parse_args():
     p.add_argument("--init_ckpt", type=str, default=None)  # 新增的初始化权重参数
     p.add_argument("--tumor_ratios", type=float, nargs=2, default=[0.2, 0.8])
     p.add_argument("--margin", type=int, default=12)
+    # parse_args() 里新增一个参数
+    p.add_argument(
+        "--learnable_loss",
+        action="store_true",
+        help="启用可学习权重损失（alpha自动学习liver/tumor平衡）",
+    )
     return p.parse_args()
 
 
@@ -121,21 +154,6 @@ def main():
     args = parse_args()
     add_medseg_to_syspath(args.medseg_root)
 
-    from medseg.data.dataset_offline import load_pt_paths, split_three_ways
-    from medseg.data.transforms_offline import (
-        build_train_transforms,
-        build_val_transforms,
-    )
-    from medseg.engine.train_eval import train_one_epoch, validate_sliding_window
-    from medseg.models.build_model import build_model
-    from medseg.utils.ckpt import load_ckpt, save_ckpt
-    from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
-
-    from medseg.utils.train_utils import set_seed
-    from twostage.train_logger import TrainLoggerTwoStage
-    from twostage.dataset_tumor_roi import TumorROIDataset
-    from twostage.train_eval_tumor import tumor_metrics_from_val_result
-
     set_seed(args.seed)
 
     all_pt = load_pt_paths(args.preprocessed_root)
@@ -145,14 +163,15 @@ def main():
         val_ratio=args.val_ratio,
         seed=args.seed,
     )
+    # tr,va,te都是路径列表
 
     tr_pos, tr_neg = filter_tumor_positive_cases(tr)
     va_pos, va_neg = filter_tumor_positive_cases(va)
     te_pos, te_neg = filter_tumor_positive_cases(te)
 
     print(f"[split raw] train={len(tr)} val={len(va)} test={len(te)}")
-    print(f"[split tumor+] train={len(tr_pos)} val={len(va_pos)} test={len(te_pos)}")
-    print(f"[split tumor-] train={len(tr_neg)} val={len(va_neg)} test={len(te_neg)}")
+    print(f"[有肿瘤部分] train={len(tr_pos)} val={len(va_pos)} test={len(te_pos)}")
+    print(f"[无肿瘤部分] train={len(tr_neg)} val={len(va_neg)} test={len(te_neg)}")
 
     tr = tr_pos
     va = va_pos
@@ -204,6 +223,7 @@ def main():
         "in_channels": 1,
         "out_channels": 2,
         "resume": args.resume,
+        "learnable_loss": bool(args.learnable_loss),
     }
     save_json(config, workdir, "config")
 
@@ -263,6 +283,13 @@ def main():
         args.model, in_channels=1, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    if args.learnable_loss:
+        criterion = LearnableWeightedLoss(base_loss_type=args.loss).to(device)
+        criterion_optimizer = torch.optim.Adam(criterion.parameters(), lr=1e-3)
+    else:
+        criterion = None
+        criterion_optimizer = None
+
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     scaler = torch.cuda.amp.GradScaler() if args.amp and device == "cuda" else None
 
@@ -276,10 +303,20 @@ def main():
 
     # 如果需要 resume 训练
     if args.resume:
-        ckpt = load_ckpt(args.resume, model, optimizer=optimizer, map_location=device)
+        ckpt = load_ckpt_full(
+            args.resume,
+            model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
+            map_location=device,
+        )
         start_epoch = int(ckpt.get("epoch", 0)) + 1
         best = float(ckpt.get("best_metric", -1.0))
-        print(f"[resume] start_epoch={start_epoch} best={best:.4f}")
+        best_epoch = int(ckpt.get("best_epoch", 0))
+        print(
+            f"[resume] start_epoch={start_epoch} best={best:.4f} best_epoch={best_epoch}"
+        )
 
     logger = TrainLoggerTwoStage(workdir)
 
@@ -289,16 +326,29 @@ def main():
 
     wall_start = time.time()
     for epoch in range(start_epoch, args.epochs + 1):
-        train_loss = train_one_epoch(
-            model=model,
-            loader=train_loader,
-            optimizer=optimizer,
-            device=device,
-            scaler=scaler,
-            loss_type=args.loss,
-            epoch=epoch,
-            epochs=args.epochs,
-        )
+        if args.learnable_loss:
+            train_loss = train_one_epoch_binary_learnable(
+                model=model,
+                loader=train_loader,
+                optimizer=optimizer,
+                criterion=criterion,
+                criterion_optimizer=criterion_optimizer,
+                device=device,
+                scaler=scaler,
+                epoch=epoch,
+                epochs=args.epochs,
+            )
+        else:
+            train_loss = train_one_epoch_binary(  # 原有代码完全不变
+                model=model,
+                loader=train_loader,
+                optimizer=optimizer,
+                device=device,
+                scaler=scaler,
+                loss_type=args.loss,
+                epoch=epoch,
+                epochs=args.epochs,
+            )
 
         val_tumor_dice = None
         if epoch % args.val_every == 0:
@@ -317,12 +367,27 @@ def main():
             if val_tumor_dice > best:
                 best = val_tumor_dice
                 best_epoch = epoch
-                save_ckpt(
-                    os.path.join(workdir, "best.pt"), model, optimizer, epoch, best
+                save_ckpt_full(
+                    os.path.join(workdir, "best.pt"),
+                    model,
+                    optimizer,
+                    epoch,
+                    best,
+                    scheduler=scheduler,
+                    scaler=scaler,
+                    best_epoch=best_epoch,
                 )
-
-        save_ckpt(os.path.join(workdir, "last.pt"), model, optimizer, epoch, best)
         scheduler.step()
+        save_ckpt_full(
+            os.path.join(workdir, "last.pt"),
+            model,
+            optimizer,
+            epoch,
+            best,
+            scheduler=scheduler,
+            scaler=scaler,
+            best_epoch=best_epoch,
+        )
 
         logger.log(
             epoch=epoch,
@@ -332,6 +397,9 @@ def main():
             best=float(best),
             lr=float(optimizer.param_groups[0]["lr"]),
         )
+        if args.learnable_loss and criterion is not None:
+            w = criterion.get_weights()
+            logger.log_extra(epoch=epoch, w_liver=w["w_liver"], w_tumor=w["w_tumor"])
 
     total_sec = time.time() - wall_start
     metrics = {
