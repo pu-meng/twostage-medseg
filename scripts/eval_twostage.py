@@ -18,6 +18,9 @@ from monai.inferers.utils import sliding_window_inference
 
 from medseg.data.dataset_offline import split_three_ways
 
+# twostage_medseg/metrics/filter.py
+from metrics.filter import filter_largest_component
+
 
 def add_medseg_to_syspath(medseg_root: str) -> None:
     medseg_root = os.path.abspath(medseg_root)
@@ -60,7 +63,7 @@ def parse_args():
     p.add_argument("--save_vis", action="store_true", help="保存可视化png")
     p.add_argument("--vis_n", type=int, default=10, help="最多保存前N个case的可视化")
     p.add_argument("--min_tumor_size", type=int, default=50)
-    
+
     return p.parse_args()
 
 
@@ -413,6 +416,9 @@ def main():
             pred1 = torch.argmax(logits1.float(), dim=1)[0].cpu()  # [D,H,W]
             liver_mask = pred1 == 1
 
+            liver_mask = filter_largest_component(liver_mask)
+            pred1_filtered = liver_mask.long()
+
             # -----------------------------
             # stage2: tumor segmentation in liver ROI
             # -----------------------------
@@ -497,7 +503,7 @@ def main():
                     save_path=os.path.join(vis_dir, f"{case_name}.png"),
                     image=image,
                     label=label,
-                    pred1=pred1,
+                    pred1=pred1_filtered,
                     tumor_full=tumor_mask.long(),
                     final_pred=final_pred,
                     case_name=case_name,

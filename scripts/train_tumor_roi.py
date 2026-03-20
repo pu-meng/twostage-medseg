@@ -14,7 +14,10 @@ from medseg.data.transforms_offline import (
     build_train_transforms,
     build_val_transforms,
 )
-from medseg.engine.train_eval import train_one_epoch_binary, validate_sliding_window
+from medseg.engine.train_eval import (
+    train_one_epoch_sigmoid_binary,
+    validate_sliding_window,
+)
 from medseg.models.build_model import build_model
 
 from medseg.engine.adaptive_loss import (
@@ -22,7 +25,7 @@ from medseg.engine.adaptive_loss import (
     LearnableWeightedLoss,
 )
 
-
+from metrics.DiagLogger import DiagLogger
 from medseg.utils.ckpt import (
     load_ckpt_full,
     save_ckpt_full,
@@ -82,7 +85,7 @@ def parse_args():
     p.add_argument(
         "--loss", type=str, default="dicece", choices=["dicece", "dicefocal", "tversky"]
     )
-    p.add_argument("--val_every", type=int, default=6)
+    p.add_argument("--val_every", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--train_n", type=int, default=0)
     p.add_argument("--val_n", type=int, default=0)
@@ -94,8 +97,14 @@ def parse_args():
     p.add_argument(
         "--learnable_loss",
         action="store_true",
-        help="启用可学习权重损失（alpha自动学习liver/tumor平衡）",
+        help="启用可学习权重损失(alpha自动学习liver/tumor平衡)",
     )
+    p.add_argument("--bbox_jitter", action="store_true")
+    p.add_argument("--bbox_max_shift", type=int, default=8)
+    p.add_argument("--random_margin", action="store_true")
+    p.add_argument("--margin_min", type=int, default=8)
+    p.add_argument("--margin_max", type=int, default=20)
+
     return p.parse_args()
 
 
@@ -172,14 +181,17 @@ def main():
     print(f"[split raw] train={len(tr)} val={len(va)} test={len(te)}")
     print(f"[有肿瘤部分] train={len(tr_pos)} val={len(va_pos)} test={len(te_pos)}")
     print(f"[无肿瘤部分] train={len(tr_neg)} val={len(va_neg)} test={len(te_neg)}")
-
-    tr = tr_pos
-    va = va_pos
+    tr_all, va_all, te_all = tr, va, te
 
     if args.train_n > 0:
         tr = tr[: args.train_n]
     if args.val_n > 0:
         va = va[: args.val_n]
+
+    tr_pos_cur, tr_neg_cur = filter_tumor_positive_cases(tr)
+    va_pos_cur, va_neg_cur = filter_tumor_positive_cases(va)
+    print(f"[after train_n/val_n] train pos={len(tr_pos_cur)} neg={len(tr_neg_cur)}")
+    print(f"[after train_n/val_n] val   pos={len(va_pos_cur)} neg={len(va_neg_cur)}")
 
     timestamp = datetime.now().strftime("%m-%d-%H-%M-%S")
     workdir = os.path.join(args.exp_root, args.exp_name, "train", timestamp)
@@ -224,8 +236,20 @@ def main():
         "out_channels": 2,
         "resume": args.resume,
         "learnable_loss": bool(args.learnable_loss),
+        "bbox_jitter": bool(args.bbox_jitter),
+        "bbox_max_shift": int(args.bbox_max_shift),
+        "random_margin": bool(args.random_margin),
+        "margin_min": int(args.margin_min),
+        "margin_max": int(args.margin_max),
     }
     save_json(config, workdir, "config")
+    diag = DiagLogger(workdir)
+    diag.log_dataset(args, tr, va, te, tr_pos_cur, va_pos_cur)
+    diag.check_data_leakage(tr_all, va_all, te_all)
+
+    diag.log_label_stats(tr, tag="train", max_cases=10)
+    diag.log_label_stats(va, tag="val", max_cases=5)
+    diag.log_roi_stats(tr, tag="train", max_cases=10, tumor_label=2)
 
     train_tf = build_train_transforms(
         tuple(args.patch), ratios=tuple(args.tumor_ratios)
@@ -238,13 +262,22 @@ def main():
         repeats=args.repeats,
         margin=args.margin,
         keep_meta=False,
+        bbox_jitter=args.bbox_jitter,
+        bbox_max_shift=args.bbox_max_shift,
+        random_margin=args.random_margin,
+        margin_min=args.margin_min,
+        margin_max=args.margin_max,
     )
+
     val_ds = TumorROIDataset(
         va,
         transform=val_tf,
         repeats=1,
         margin=args.margin,
         keep_meta=True,
+        bbox_jitter=False,
+        bbox_max_shift=0,
+        random_margin=False,
     )
 
     if args.num_workers > 0:
@@ -339,7 +372,7 @@ def main():
                 epochs=args.epochs,
             )
         else:
-            train_loss = train_one_epoch_binary(  # 原有代码完全不变
+            train_loss = train_one_epoch_sigmoid_binary(  # 原有代码完全不变
                 model=model,
                 loader=train_loader,
                 optimizer=optimizer,
@@ -397,9 +430,18 @@ def main():
             best=float(best),
             lr=float(optimizer.param_groups[0]["lr"]),
         )
+        w = criterion.get_weights() if args.learnable_loss and criterion else {}
         if args.learnable_loss and criterion is not None:
-            w = criterion.get_weights()
             logger.log_extra(epoch=epoch, w_liver=w["w_liver"], w_tumor=w["w_tumor"])
+        if val_tumor_dice is not None:
+            diag.log_epoch(
+                epoch=epoch,
+                train_loss=train_loss,
+                val_tumor_dice=val_tumor_dice,
+                best=best,
+                w_liver=w.get("w_liver"),
+                w_tumor=w.get("w_tumor"),
+            )
 
     total_sec = time.time() - wall_start
     metrics = {
@@ -410,6 +452,11 @@ def main():
         "n_val_cases": len(va),
         "total_train_hours": round(total_sec / 3600.0, 2),
     }
+    diag.log_final(
+        best_tumor_dice=round(float(best), 4),
+        best_epoch=best_epoch,
+        total_hours=round(total_sec / 3600.0, 2),
+    )
     save_json(metrics, workdir, "metrics")
 
     save_report(

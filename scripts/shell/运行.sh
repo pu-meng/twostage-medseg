@@ -78,9 +78,9 @@ python scripts/eval_twostage.py \
 --medseg_root /home/pumengyu/medseg_project \
 --preprocessed_root /home/pumengyu/Task03_Liver_pt \
 --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
---stage2_ckpt /home/pumengyu/experiments/experiments_twostage/tumor_roi_dynunet/train/03-16-22-13-45/best.pt \
+--stage2_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet/train/03-17-09-22-42/best.pt \
 --stage1_model dynunet \
---stage2_model swinunetr \
+--stage2_model dynunet \
 --stage1_patch 144 144 144 \
 --stage2_patch 96 96 96 \
 --val_ratio 0.2 \
@@ -89,5 +89,26 @@ python scripts/eval_twostage.py \
 --split test \
 --save_vis \
 --vis_n 10 \
---save_dir /home/pumengyu/experiments/experiments_twostage/eval
+--margin 24 \
+--save_dir /home/pumengyu/experiments/twostage/tumor_dynunet/eval
 
+
+我们对train的roi进行改造
+
+python scripts/train_tumor_roi.py \
+  --medseg_root /home/pumengyu/medseg_project \
+  --preprocessed_root /data/Task03_Liver_pt \
+  --exp_name tumor_roi_dynunet_jitter \
+  --model dynunet \
+  --epochs 200 \
+  --batch_size 1 \
+  --lr 3e-3 \
+  --patch 96 96 96 \
+  --val_patch 96 96 96 \
+  --tumor_ratios 0.2 0.8 \
+  --margin 12 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_min 8 \
+  --margin_max 20
