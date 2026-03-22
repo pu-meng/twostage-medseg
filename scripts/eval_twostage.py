@@ -206,6 +206,46 @@ def dice_binary(pred: torch.Tensor, gt: torch.Tensor) -> float:
     return 2.0 * inter / (pred_sum + gt_sum + 1e-8)
 
 
+def summarize_metrics_list(metrics_list: List[Dict], keys: List[str]) -> Dict:
+    return {k: summarize_metric([m[k] for m in metrics_list]) for k in keys}
+
+
+def compute_metrics(pred: torch.Tensor, gt: torch.Tensor) -> Dict[str, float]:
+    # pred = bool(pred) #bool()会把整个tensor变成True/False
+    # gt = bool(gt)
+    pred = pred.bool()
+    gt = gt.bool()  # .bool()是逐元素转换,保持tensor形状不变
+    TP = (pred & gt).sum().item()
+    FP = (pred & ~gt).sum().item()
+    FN = (~pred & gt).sum().item()
+    TN = (~pred & ~gt).sum().item()
+    dice = dice_binary(pred, gt)
+    jaccard = TP / (TP + FP + FN + 1e-8)
+    precision = TP / (TP + FP + 1e-8)
+    recall = TP / (TP + FN + 1e-8)
+    FPR = FP / (FP + TN + 1e-8)
+    FDR = FP / (FP + TP + 1e-8)
+    NPV = TN / (TN + FN + 1e-8)
+    ACC = (TP + TN) / (TP + FP + FN + TN + 1e-8)
+    FNR = FN / (TP + FN + 1e-8)
+
+    return {
+        "TP": TP,
+        "FP": FP,
+        "FN": FN,
+        "TN": TN,
+        "Dice": dice,
+        "Jaccard": jaccard,
+        "Precision": precision,
+        "Recall": recall,
+        "FPR": FPR,
+        "FDR": FDR,
+        "FNR": FNR,
+        "NPV": NPV,
+        "ACC": ACC,
+    }
+
+
 def summarize_metric(xs: List[float]) -> Dict[str, float]:
     if len(xs) == 0:
         return {
@@ -342,6 +382,8 @@ def main():
         pt_paths = all_pt
     else:
         raise ValueError(f"unsupported split: {args.split}")
+    liver_metrics_list: List[float] = []
+    tumor_metrics_list: List[float] = []
 
     if args.n > 0:
         pt_paths = pt_paths[: args.n]
@@ -488,14 +530,18 @@ def main():
                 gt_liver = gt > 0
                 gt_tumor = gt == 2
 
-                liver_dice = dice_binary(final_pred > 0, gt_liver)
-                tumor_dice = dice_binary(final_pred == 2, gt_tumor)
+                liver_metrics = compute_metrics(final_pred > 0, gt_liver)
+                tumor_metrics = compute_metrics(final_pred == 2, gt_tumor)
 
-                row["liver_dice"] = round(liver_dice, 4)
-                row["tumor_dice"] = round(tumor_dice, 4)
+                row["liver_dice"] = round(liver_metrics["Dice"], 4)
+                row["tumor_dice"] = round(tumor_metrics["Dice"], 4)
+                row["tumor_jaccard"] = round(tumor_metrics["Jaccard"], 4)
+                row["tumor_recall"] = round(tumor_metrics["Recall"], 4)
+                row["tumor_FDR"] = round(tumor_metrics["FDR"], 4)
+                row["tumor_precision"] = round(tumor_metrics["Precision"], 4)
 
-                liver_dices.append(float(row["liver_dice"]))
-                tumor_dices.append(float(row["tumor_dice"]))
+                liver_metrics_list.append(liver_metrics)
+                tumor_metrics_list.append(tumor_metrics)
 
             rows.append(row)
             if vis_dir is not None and case_idx <= args.vis_n:
@@ -541,6 +587,10 @@ def main():
         "liver_dice",
         "tumor_dice",
         "bbox",
+        "tumor_jaccard",
+        "tumor_recall",
+        "tumor_FDR",
+        "tumor_precision",
     ]
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -565,8 +615,10 @@ def main():
         "n_cases": len(rows),
         "device": device,
         "elapsed_hours": round(elapsed_hours, 3),
-        "liver_dice": summarize_metric(liver_dices),
-        "tumor_dice": summarize_metric(tumor_dices),
+        "liver": summarize_metrics_list(liver_metrics_list, ["Dice"]),
+        "tumor": summarize_metrics_list(
+            tumor_metrics_list, ["Dice", "Jaccard", "Recall", "FDR", "FNR", "Precision"]
+        ),
     }
 
     with open(os.path.join(workdir, "metrics.json"), "w", encoding="utf-8") as f:
@@ -583,18 +635,15 @@ def main():
         f.write(f"n_cases: {metrics['n_cases']}\n")
         f.write(f"device: {metrics['device']}\n")
         f.write(f"elapsed_hours: {metrics['elapsed_hours']}\n\n")
-
-        f.write("Liver Dice\n")
-        f.write(f"  mean: {metrics['liver_dice']['mean']}\n")
-        f.write(f"  std : {metrics['liver_dice']['std']}\n")
-        f.write(f"  min : {metrics['liver_dice']['min']}\n")
-        f.write(f"  max : {metrics['liver_dice']['max']}\n\n")
-
-        f.write("Tumor Dice\n")
-        f.write(f"  mean: {metrics['tumor_dice']['mean']}\n")
-        f.write(f"  std : {metrics['tumor_dice']['std']}\n")
-        f.write(f"  min : {metrics['tumor_dice']['min']}\n")
-        f.write(f"  max : {metrics['tumor_dice']['max']}\n")
+        for organ, organ_key in [("Liver", "liver"), ("Tumor", "tumor")]:
+            f.write(f"{organ}\n")
+            for metric_name, summary in metrics[organ_key].items():
+                f.write(f"{metric_name}\n")
+                f.write(f"  mean: {summary['mean']}\n")
+                f.write(f"   std: {summary['std']}\n")
+                f.write(f"   min: {summary['min']}\n")
+                f.write(f"   max: {summary['max']}\n")
+            f.write("\n")
 
     print("\n===== Final Metrics =====")
     print(json.dumps(metrics, ensure_ascii=False, indent=2))

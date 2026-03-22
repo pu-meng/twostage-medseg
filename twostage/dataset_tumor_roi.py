@@ -73,22 +73,27 @@ class TumorROIDataset(Dataset):
         self.margin_max = int(margin_max)
 
         if len(self.pt_paths) == 0:
-            raise ValueError("pt_paths is empty")
+            raise ValueError("pt_paths 是空的")
         if self.repeats <= 0:
-            raise ValueError("repeats must be >= 1")
+            raise ValueError("repeats 必须 >= 1")
         if self.bbox_max_shift < 0:
-            raise ValueError("bbox_max_shift must be >= 0")
+            raise ValueError("bbox_max_shift 必须>= 0")
         if self.margin_min < 0 or self.margin_max < 0:
-            raise ValueError("margin_min/margin_max must be >= 0")
+            raise ValueError("margin_min/margin_max 必须 >= 0")
         if self.margin_min > self.margin_max:
-            raise ValueError("margin_min must be <= margin_max")
+            raise ValueError("margin_min 必须 <= margin_max")
 
     def __len__(self) -> int:
         return len(self.pt_paths) * self.repeats
 
     def _sample_margin(self) -> int:
+        """
+        如果 random_margin=True,则随机生成margin_min和margin_max之间的整数
+        否则,返回固定的self.margin
+        """
         if self.random_margin:
             return random.randint(self.margin_min, self.margin_max)
+        # random.randint(a,b)返回[a,b]之间的随机整数
         return self.margin
 
     def _jitter_bbox(
@@ -115,6 +120,8 @@ class TumorROIDataset(Dataset):
         x1 += random.randint(-s, s)
 
         # 裁回合法范围
+        # z0,yo,x0等这些都要比大于等于0,小于等于D-1,H-1,W-1
+        # z1,y1,x1等这些都要比大于等于z0+1,y0+1,x0+1,小于等于D,H,W
         z0 = max(0, min(z0, D - 1))
         z1 = max(z0 + 1, min(z1, D))
 
@@ -161,18 +168,19 @@ class TumorROIDataset(Dataset):
         liver_mask = label[0] > 0
 
         liver_mask = filter_largest_component(liver_mask)
-        
+
         # 训练时可随机 margin，模拟 stage1 预测框尺度波动
         cur_margin = self._sample_margin()
+#这里的margin是上下左右前后 都加的margin,大小一样
         bbox = compute_bbox_from_mask(liver_mask, margin=cur_margin)
 
         # 训练时可对 bbox 做扰动，模拟 stage1 预测框位置误差
         bbox = self._jitter_bbox(bbox, spatial_shape=tuple(label.shape[1:]))
-
+#这个的变动是对z,y,x三个维度都做了变动,但是z,y,x的变动是独立的,即z的变动和y,x的变动是独立的
+#这个变动必须小于self.bbox_max_shift,否则会报错
         image_roi = crop_3d(image, bbox)
         label_roi = crop_3d(label, bbox)
-        
-        
+
         tumor_roi = (label_roi == 2).long()
 
         out: dict[str, Any] = {
@@ -185,7 +193,7 @@ class TumorROIDataset(Dataset):
             out["bbox"] = bbox_to_dict(bbox)
             out["source_pt"] = pt_path
             out["roi_shape"] = list(image_roi.shape)
-            out["margin"]=int(cur_margin)
+            out["margin"] = int(cur_margin)
 
         if self.transform is not None:
             out = self.transform(out)

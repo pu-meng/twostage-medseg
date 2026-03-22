@@ -110,19 +110,32 @@ def parse_args():
 
 def load_init_weights(path, model, map_location="cpu"):
     """
-        从checkpoint里面挑出匹配的参数,加载到当前模型,其余全部忽略
 
-        这里的
-        src =
-    {
-        "encoder.conv1.weight": tensor(...)
-        "encoder.conv1.bias": tensor(...)
-    }
-    model是当前模型参数
-    src是checkpoint参数
-    dst.update(matched)
-    这个是把匹配的参数覆盖到当前模型参数
+            ckpt=checkpoint,src=source,dst=destination
+        ckpt是训练过程中的保存的快照,可以包含模型参数,优化器状态,训练轮数,loss值
+        model是PyTorch的nn.Module对象,比如model=UNet(),model=ResNet50()
+        dst=model.state_dict()
+        返回的dst类似于
+        {
+        "encoder.conv1.weiots":tensor([...]),
+        "encoder.conv1.bias":tensor([...]),
+        "encoder.conv2.weioets":tensor([...]),
+        ...
+        }
+        如果src是字典,那么src.items()就是字典的键值对迭代器,遍历会得到
+        ("encoder.conv1.weiots",tensor([...])),("encoder.conv1.bias",tensor([...])),...
 
+            model是当前模型参数
+            src是checkpoint参数
+            dst.update(matched)
+            这个是把匹配的参数覆盖到当前模型参数
+    从 path 加载 checkpoint
+        ↓
+    筛选出「名字相同 且 形状相同」的参数
+        ↓
+    把这些参数复制到当前 model 里
+        ↓
+    其他不匹配的层保持原样（随机初始化或已有的值）
 
     """
     ckpt = torch.load(path, map_location=map_location, weights_only=False)
@@ -174,13 +187,6 @@ def main():
     )
     # tr,va,te都是路径列表
 
-    tr_pos, tr_neg = filter_tumor_positive_cases(tr)
-    va_pos, va_neg = filter_tumor_positive_cases(va)
-    te_pos, te_neg = filter_tumor_positive_cases(te)
-
-    print(f"[split raw] train={len(tr)} val={len(va)} test={len(te)}")
-    print(f"[有肿瘤部分] train={len(tr_pos)} val={len(va_pos)} test={len(te_pos)}")
-    print(f"[无肿瘤部分] train={len(tr_neg)} val={len(va_neg)} test={len(te_neg)}")
     tr_all, va_all, te_all = tr, va, te
 
     if args.train_n > 0:
@@ -188,10 +194,18 @@ def main():
     if args.val_n > 0:
         va = va[: args.val_n]
 
+    # tr_pos是有肿瘤的路径列表，tr_neg是没有肿瘤的路径列表
+    te_pos, te_neg = filter_tumor_positive_cases(te)
     tr_pos_cur, tr_neg_cur = filter_tumor_positive_cases(tr)
     va_pos_cur, va_neg_cur = filter_tumor_positive_cases(va)
-    print(f"[after train_n/val_n] train pos={len(tr_pos_cur)} neg={len(tr_neg_cur)}")
-    print(f"[after train_n/val_n] val   pos={len(va_pos_cur)} neg={len(va_neg_cur)}")
+
+    print(f"[原始划分] train={len(tr)} val={len(va)} test={len(te)}")
+    print(
+        f"[有肿瘤部分] train={len(tr_pos_cur)} val={len(va_pos_cur)} test={len(te_pos)}"
+    )
+    print(
+        f"[无肿瘤部分] train={len(tr_neg_cur)} val={len(va_neg_cur)} test={len(te_neg)}"
+    )
 
     timestamp = datetime.now().strftime("%m-%d-%H-%M-%S")
     workdir = os.path.join(args.exp_root, args.exp_name, "train", timestamp)
@@ -244,7 +258,9 @@ def main():
     }
     save_json(config, workdir, "config")
     diag = DiagLogger(workdir)
+    #下面的是对数据的健康检查
     diag.log_dataset(args, tr, va, te, tr_pos_cur, va_pos_cur)
+
     diag.check_data_leakage(tr_all, va_all, te_all)
 
     diag.log_label_stats(tr, tag="train", max_cases=10)
@@ -279,7 +295,8 @@ def main():
         bbox_max_shift=0,
         random_margin=False,
     )
-
+#train_tf是训练时的数据增强，val_tf是验证时的数据增强
+#train_ds是训练集，val_ds是验证集,是TumorROIDataset的实例
     if args.num_workers > 0:
         train_loader = DataLoader(
             train_ds,
@@ -330,7 +347,12 @@ def main():
     best = -1.0
     best_epoch = 0
 
-    # 新增部分：加载初始化权重
+    # 新增部分：加载初始化权重,这里加载的是分割肝脏的权重,相当于迁移学习
+    #不传--init_ckpt就是完全不用stage1权重,从头训练肿瘤,
+    #传了--init_ckpt就是用stage1权重初始化,然后训练分割肿瘤
+    #但是不论传还是不传--init_ckpt,这个肝脏ROI都是基于真实标签分割的
+    #验证阶段才是需要同时传stage1和stage2的权重的
+    #如果stage1和stage2 的模型都一样,可以传,但是不一样可以不传,影响都不大
     if args.init_ckpt:
         load_init_weights(args.init_ckpt, model, map_location=device)
 

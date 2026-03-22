@@ -95,20 +95,71 @@ python scripts/eval_twostage.py \
 
 我们对train的roi进行改造
 
-python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /data/Task03_Liver_pt \
-  --exp_name tumor_roi_dynunet_jitter \
-  --model dynunet \
-  --epochs 200 \
-  --batch_size 1 \
-  --lr 3e-3 \
-  --patch 96 96 96 \
-  --val_patch 96 96 96 \
-  --tumor_ratios 0.2 0.8 \
+
+
+
   --margin 12 \
   --bbox_jitter \
   --bbox_max_shift 8 \
   --random_margin \
   --margin_min 8 \
   --margin_max 20
+
+
+
+CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
+  --medseg_root /home/pumengyu/medseg_project \
+  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --exp_root /home/pumengyu/experiments/twostage \
+  --exp_name tumor_dynunet_roi_jitter \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 1 \
+  --lr 0.003 \
+  --patch 96 96 96 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 1 \
+  --val_every 3 \
+  --num_workers 2 \
+  --amp \
+  --loss dicefocal \
+  --overlap 0.5 \
+  --repeats 6 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_max 20 \
+  --init_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+
+
+
+CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
+  --medseg_root /home/pumengyu/medseg_project \
+  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --exp_root /home/pumengyu/experiments/twostage \
+  --exp_name tumor_dynunet_roi_jitter \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 2 \
+  --lr 0.003 \
+  --patch 96 96 96 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 2 \
+  --val_every 3 \
+  --num_workers 4 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss dicefocal \
+  --overlap 0.5 \
+  --repeats 6 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_max 20 \
+  --resume /home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-10-47-09/last.pt \
+  --init_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+
