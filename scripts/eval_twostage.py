@@ -8,18 +8,21 @@ import json
 import os
 import scipy.ndimage as ndi
 
-import matplotlib.pyplot as plt
 import sys
 import time
 from typing import Dict, List
 
 import torch
 from monai.inferers.utils import sliding_window_inference
+from medseg.models.build_model import build_model
+from medseg.utils.ckpt import load_ckpt
 
 from medseg.data.dataset_offline import split_three_ways
 
 # twostage_medseg/metrics/filter.py
 from metrics.filter import filter_largest_component
+from metrics.metrics_utils import compute_metrics, summarize_metrics_list
+from twostage.vis_utils import save_case_visualization
 
 
 def add_medseg_to_syspath(medseg_root: str) -> None:
@@ -34,6 +37,10 @@ def parse_args():
     p.add_argument("--preprocessed_root", type=str, required=True)
     p.add_argument("--stage1_ckpt", type=str, required=True)
     p.add_argument("--stage2_ckpt", type=str, required=True)
+    p.add_argument("--stage2_ckpt_b", type=str, default=None,
+                   help="fine-tune 模型路径，有则与 stage2_ckpt 做 ensemble")
+    p.add_argument("--ensemble_weight_b", type=float, default=0.5,
+                   help="Model B 的融合权重，Model A = 1 - weight_b")
 
     p.add_argument("--stage1_model", type=str, default="dynunet")
     p.add_argument("--stage2_model", type=str, default="dynunet")
@@ -56,132 +63,23 @@ def parse_args():
         default="test",
         choices=["train", "val", "test", "all"],
     )
-
     p.add_argument("--n", type=int, default=0, help="只跑前N个case, 0=全部")
     p.add_argument("--save_pred_pt", action="store_true", help="是否保存预测结果")
     p.add_argument("--save_dir", type=str, default="./experiments_twostage_eval")
     p.add_argument("--save_vis", action="store_true", help="保存可视化png")
     p.add_argument("--vis_n", type=int, default=10, help="最多保存前N个case的可视化")
     p.add_argument("--min_tumor_size", type=int, default=50)
-
     return p.parse_args()
 
 
 def safe_case_name(pt_path: str) -> str:
+    """
+    类似pt_path="/home/.../case_1.pt", 返回"case_1"
+    """
     name = os.path.basename(pt_path)
     if name.endswith(".pt"):
         name = name[:-3]
     return name
-
-
-def pick_slice_indices(mask_or_label: torch.Tensor) -> Dict[str, int]:
-    """
-    选三个方向上更有信息量的切片:
-    - 如果有前景, 取前景中心
-    - 如果没有前景, 取体积中心
-    输入: [D,H,W]
-    返回: {"axial": z, "coronal": y, "sagittal": x}
-    """
-    assert mask_or_label.ndim == 3
-
-    D, H, W = mask_or_label.shape
-    coords = torch.nonzero(mask_or_label > 0, as_tuple=False)
-
-    if coords.numel() == 0:
-        return {
-            "axial": D // 2,
-            "coronal": H // 2,
-            "sagittal": W // 2,
-        }
-
-    center = coords.float().mean(dim=0)
-    z = int(round(center[0].item()))
-    y = int(round(center[1].item()))
-    x = int(round(center[2].item()))
-
-    z = max(0, min(z, D - 1))
-    y = max(0, min(y, H - 1))
-    x = max(0, min(x, W - 1))
-
-    return {
-        "axial": z,
-        "coronal": y,
-        "sagittal": x,
-    }
-
-
-def save_case_visualization(
-    save_path: str,
-    image: torch.Tensor,  # [1,D,H,W]
-    label: torch.Tensor | None,  # [1,D,H,W] or None
-    pred1: torch.Tensor,  # [D,H,W]
-    tumor_full: torch.Tensor,  # [D,H,W]
-    final_pred: torch.Tensor,  # [D,H,W]
-    case_name: str,
-) -> None:
-    """
-    保存 one-case 可视化:
-    行 = axial/coronal/sagittal
-    列 = image / gt / liver_pred / tumor_pred / final_pred
-    """
-    image3d = image[0].cpu()
-    gt3d = label[0].cpu() if label is not None else None
-
-    # 优先根据GT选切片, 没GT就根据预测选
-    ref = gt3d if gt3d is not None else final_pred
-    idxs = pick_slice_indices(ref)
-
-    def get_views(vol: torch.Tensor, idxs: Dict[str, int]):
-        # 返回 3 个方向切片, 并转成常见显示方向
-        axial = vol[idxs["axial"], :, :]  # [H,W]
-        coronal = vol[:, idxs["coronal"], :]  # [D,W]
-        sagittal = vol[:, :, idxs["sagittal"]]  # [D,H]
-
-        return [
-            axial.numpy(),
-            coronal.numpy(),
-            sagittal.numpy(),
-        ]
-
-    img_views = get_views(image3d, idxs)
-    gt_views = get_views(gt3d, idxs) if gt3d is not None else [None, None, None]
-    liver_views = get_views(pred1, idxs)
-    tumor_views = get_views(tumor_full, idxs)
-    final_views = get_views(final_pred, idxs)
-
-    row_names = ["axial", "coronal", "sagittal"]
-    col_names = ["image", "gt", "stage1_liver", "stage2_tumor", "final_pred"]
-
-    fig, axes = plt.subplots(3, 5, figsize=(18, 10))
-
-    for r in range(3):
-        for c in range(5):
-            ax = axes[r, c]
-            ax.axis("off")
-
-            if c == 0:
-                ax.imshow(img_views[r], cmap="gray")
-            elif c == 1:
-                if gt_views[r] is not None:
-                    ax.imshow(gt_views[r], cmap="gray", vmin=0, vmax=2)
-                else:
-                    ax.text(0.5, 0.5, "No GT", ha="center", va="center")
-            elif c == 2:
-                ax.imshow(liver_views[r], cmap="gray", vmin=0, vmax=1)
-            elif c == 3:
-                ax.imshow(tumor_views[r], cmap="gray", vmin=0, vmax=1)
-            elif c == 4:
-                ax.imshow(final_views[r], cmap="gray", vmin=0, vmax=2)
-
-            if r == 0:
-                ax.set_title(col_names[c], fontsize=11)
-            if c == 0:
-                ax.set_ylabel(row_names[r], fontsize=11)
-
-    fig.suptitle(case_name, fontsize=14)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=140, bbox_inches="tight")
-    plt.close(fig)
 
 
 def load_pt_paths(preprocessed_root: str) -> List[str]:
@@ -189,79 +87,6 @@ def load_pt_paths(preprocessed_root: str) -> List[str]:
     if len(pt_paths) == 0:
         raise FileNotFoundError(f"no .pt found in {preprocessed_root}")
     return pt_paths
-
-
-def dice_binary(pred: torch.Tensor, gt: torch.Tensor) -> float:
-    pred = pred.bool()
-    gt = gt.bool()
-
-    inter = (pred & gt).sum().item()
-    pred_sum = pred.sum().item()
-    gt_sum = gt.sum().item()
-
-    if pred_sum == 0 and gt_sum == 0:
-        return 1.0
-    if pred_sum + gt_sum == 0:
-        return 0.0
-    return 2.0 * inter / (pred_sum + gt_sum + 1e-8)
-
-
-def summarize_metrics_list(metrics_list: List[Dict], keys: List[str]) -> Dict:
-    return {k: summarize_metric([m[k] for m in metrics_list]) for k in keys}
-
-
-def compute_metrics(pred: torch.Tensor, gt: torch.Tensor) -> Dict[str, float]:
-    # pred = bool(pred) #bool()会把整个tensor变成True/False
-    # gt = bool(gt)
-    pred = pred.bool()
-    gt = gt.bool()  # .bool()是逐元素转换,保持tensor形状不变
-    TP = (pred & gt).sum().item()
-    FP = (pred & ~gt).sum().item()
-    FN = (~pred & gt).sum().item()
-    TN = (~pred & ~gt).sum().item()
-    dice = dice_binary(pred, gt)
-    jaccard = TP / (TP + FP + FN + 1e-8)
-    precision = TP / (TP + FP + 1e-8)
-    recall = TP / (TP + FN + 1e-8)
-    FPR = FP / (FP + TN + 1e-8)
-    FDR = FP / (FP + TP + 1e-8)
-    NPV = TN / (TN + FN + 1e-8)
-    ACC = (TP + TN) / (TP + FP + FN + TN + 1e-8)
-    FNR = FN / (TP + FN + 1e-8)
-
-    return {
-        "TP": TP,
-        "FP": FP,
-        "FN": FN,
-        "TN": TN,
-        "Dice": dice,
-        "Jaccard": jaccard,
-        "Precision": precision,
-        "Recall": recall,
-        "FPR": FPR,
-        "FDR": FDR,
-        "FNR": FNR,
-        "NPV": NPV,
-        "ACC": ACC,
-    }
-
-
-def summarize_metric(xs: List[float]) -> Dict[str, float]:
-    if len(xs) == 0:
-        return {
-            "mean": float("nan"),
-            "std": float("nan"),
-            "min": float("nan"),
-            "max": float("nan"),
-        }
-
-    x = torch.tensor(xs, dtype=torch.float32)
-    return {
-        "mean": round(float(x.mean().item()), 4),
-        "std": round(float(x.std(unbiased=False).item()), 4),
-        "min": round(float(x.min().item()), 4),
-        "max": round(float(x.max().item()), 4),
-    }
 
 
 def compute_bbox_from_mask(mask: torch.Tensor, margin: int = 12):
@@ -347,13 +172,13 @@ def main():
     args = parse_args()
     add_medseg_to_syspath(args.medseg_root)
 
-    from medseg.models.build_model import build_model
-    from medseg.utils.ckpt import load_ckpt
-
     os.makedirs(args.save_dir, exist_ok=True)
     timestamp = time.strftime("%m-%d-%H-%M-%S")
-    workdir = os.path.join(args.save_dir, f"eval_{timestamp}")
+    workdir = os.path.join(args.save_dir, f"{timestamp}")
     os.makedirs(workdir, exist_ok=True)
+
+    with open(os.path.join(workdir, "command.txt"), "w", encoding="utf-8") as f:
+        f.write(" ".join(sys.argv) + "\n")
 
     pred_dir = None
     if args.save_pred_pt:
@@ -371,7 +196,7 @@ def main():
         val_ratio=args.val_ratio,
         seed=args.seed,
     )
-
+    # 这里的决定的是在什么测试这个指标,如果不传args.split,就默认是test
     if args.split == "train":
         pt_paths = tr
     elif args.split == "val":
@@ -386,6 +211,9 @@ def main():
     tumor_metrics_list: List[float] = []
 
     if args.n > 0:
+        print(
+            f"[eval] --n={args.n}: 截断为 {len(pt_paths)} -> {min(args.n, len(pt_paths))} cases"
+        )
         pt_paths = pt_paths[: args.n]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -407,6 +235,18 @@ def main():
     load_ckpt(args.stage1_ckpt, stage1, optimizer=None, map_location=device)
     load_ckpt(args.stage2_ckpt, stage2, optimizer=None, map_location=device)
 
+    stage2_b = None
+    if args.stage2_ckpt_b is not None:
+        stage2_b = build_model(
+            args.stage2_model,
+            in_channels=1,
+            out_channels=2,
+            img_size=tuple(args.stage2_patch),
+        ).to(device)
+        load_ckpt(args.stage2_ckpt_b, stage2_b, optimizer=None, map_location=device)
+        stage2_b.eval()
+        print(f"[eval] ensemble: weight_A={1-args.ensemble_weight_b:.2f}  weight_B={args.ensemble_weight_b:.2f}")
+
     stage1.eval()
     stage2.eval()
 
@@ -418,8 +258,6 @@ def main():
     print(f"[eval] device={device}")
 
     rows: List[Dict] = []
-    liver_dices: List[float] = []
-    tumor_dices: List[float] = []
 
     time_start = time.time()
 
@@ -443,20 +281,26 @@ def main():
                 dtype=torch.float16,
                 enabled=(device == "cuda"),
             ):
+                # sliding_window_inference是MONAI官方提供的滑动窗口推理函数,专门用于处理医学图像中无法整个放入GPU的情况
                 logits1 = sliding_window_inference(
-                    inputs=x,
-                    roi_size=tuple(args.stage1_patch),
-                    sw_batch_size=args.stage1_sw_batch_size,
-                    predictor=stage1,
-                    overlap=args.overlap,
+                    inputs=x,  # x:[B,C,D,H,W]
+                    roi_size=tuple(
+                        args.stage1_patch
+                    ),  # 每个滑动窗口(patch)的大小,比如能放入GPU
+                    sw_batch_size=args.stage1_sw_batch_size,  # 每次并行处理几个batch,越大越占用显存
+                    predictor=stage1,  # 模型本身
+                    overlap=args.overlap,  # 重叠越大精度越高,但是越慢
                 )
+                # 输入是[B,C,D,H,W],输出是[B,C,D,H,W]
 
             if isinstance(logits1, (tuple, list)):
                 logits1 = logits1[0]
 
-            logits1 = torch.as_tensor(logits1)
+            logits1 = torch.as_tensor(logits1)#防御性代码,确保logits1是一个tensor
+            #logits1.float():[B,C,D,H,W]
             pred1 = torch.argmax(logits1.float(), dim=1)[0].cpu()  # [D,H,W]
             liver_mask = pred1 == 1
+            #pred1:[B,D,H,W]
 
             liver_mask = filter_largest_component(liver_mask)
             pred1_filtered = liver_mask.long()
@@ -484,12 +328,27 @@ def main():
                         predictor=stage2,
                         overlap=args.overlap,
                     )
+                    if stage2_b is not None:
+                        logits2_b = sliding_window_inference(
+                            inputs=x_roi,
+                            roi_size=tuple(args.stage2_patch),
+                            sw_batch_size=args.stage2_sw_batch_size,
+                            predictor=stage2_b,
+                            overlap=args.overlap,
+                        )
 
                 if isinstance(logits2, (tuple, list)):
                     logits2 = logits2[0]
+                logits2 = torch.as_tensor(logits2).float()
 
-                logits2 = torch.as_tensor(logits2)
-                pred2 = torch.argmax(logits2.float(), dim=1)[0].cpu()  # [d,h,w]
+                if stage2_b is not None:
+                    if isinstance(logits2_b, (tuple, list)):
+                        logits2_b = logits2_b[0]
+                    logits2_b = torch.as_tensor(logits2_b).float()
+                    w = args.ensemble_weight_b
+                    logits2 = (1 - w) * logits2 + w * logits2_b
+
+                pred2 = torch.argmax(logits2, dim=1)[0].cpu()  # [d,h,w]
 
                 tumor_full = torch.zeros_like(pred1, dtype=torch.long)
                 tumor_full = paste_3d(tumor_full, pred2.long(), bbox)
@@ -556,6 +415,8 @@ def main():
                 )
 
             if pred_dir is not None:
+                # pred_dir由args.pred_dir指定,如果args.pred_dir为空,则pred_dir为None
+                # 这个是保存预测结果的,每个case一个.pt文件,这个是给程序保存的,后续可以加载进行分析,调试
                 torch.save(
                     {
                         "image": image,

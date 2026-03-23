@@ -104,6 +104,18 @@ def parse_args():
     p.add_argument("--random_margin", action="store_true")
     p.add_argument("--margin_min", type=int, default=8)
     p.add_argument("--margin_max", type=int, default=20)
+    # 差异化 oversampling：小肿瘤/无肿瘤 hard case mining
+    p.add_argument("--small_tumor_thresh", type=int, default=0,
+                   help="小肿瘤阈值(voxels)，0=关闭 hard mining")
+    p.add_argument("--small_tumor_repeat_scale", type=int, default=3,
+                   help="小肿瘤 case 的 repeat 倍率")
+    p.add_argument("--no_tumor_repeat_scale", type=int, default=4,
+                   help="无肿瘤 case 的 repeat 倍率")
+    # fine-tune 模式：只用困难样本训练，配合 --init_ckpt 使用
+    p.add_argument("--hard_cases_only", action="store_true",
+                   help="只用无肿瘤+小肿瘤困难样本训练，需同时设置 --small_tumor_thresh")
+    p.add_argument("--normal_case_ratio", type=float, default=0.0,
+                   help="hard_cases_only 时额外混入的普通样本比例(0~1)，0=不混入，防止灾难遗忘")
 
     return p.parse_args()
 
@@ -194,6 +206,31 @@ def main():
     if args.val_n > 0:
         va = va[: args.val_n]
 
+    # hard_cases_only: 只保留无肿瘤 + 小肿瘤 case 用于 fine-tune，可选混入少量普通样本
+    if args.hard_cases_only:
+        if args.small_tumor_thresh <= 0:
+            raise ValueError("--hard_cases_only 需要同时设置 --small_tumor_thresh > 0")
+        import warnings as _w
+        import random as _random
+        def _tumor_voxels(p):
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", FutureWarning)
+                d = torch.load(p, map_location="cpu", weights_only=False, mmap=True)
+            return int((d["label"] == 2).sum().item())
+        tr_hard = [p for p in tr if _tumor_voxels(p) < args.small_tumor_thresh]
+        tr_normal = [p for p in tr if p not in set(tr_hard)]
+        n_mix = int(len(tr_normal) * args.normal_case_ratio)
+        if n_mix > 0:
+            mixed = _random.sample(tr_normal, n_mix)
+            tr = tr_hard + mixed
+            print(f"[hard_cases_only] 全部训练 case: {len(tr_hard) + len(tr_normal)} → "
+                  f"困难样本: {len(tr_hard)}, 混入普通样本: {n_mix}/{len(tr_normal)} "
+                  f"(ratio={args.normal_case_ratio}), 共 {len(tr)} cases")
+        else:
+            tr = tr_hard
+            print(f"[hard_cases_only] 全部训练 case: {len(tr_hard) + len(tr_normal)} → 困难样本: {len(tr_hard)}"
+                  f" (无肿瘤 + tumor < {args.small_tumor_thresh} voxels)")
+
     # tr_pos是有肿瘤的路径列表，tr_neg是没有肿瘤的路径列表
     te_pos, te_neg = filter_tumor_positive_cases(te)
     tr_pos_cur, tr_neg_cur = filter_tumor_positive_cases(tr)
@@ -255,6 +292,11 @@ def main():
         "random_margin": bool(args.random_margin),
         "margin_min": int(args.margin_min),
         "margin_max": int(args.margin_max),
+        "small_tumor_thresh": int(args.small_tumor_thresh),
+        "small_tumor_repeat_scale": int(args.small_tumor_repeat_scale),
+        "no_tumor_repeat_scale": int(args.no_tumor_repeat_scale),
+        "hard_cases_only": bool(args.hard_cases_only),
+        "normal_case_ratio": float(args.normal_case_ratio),
     }
     save_json(config, workdir, "config")
     diag = DiagLogger(workdir)
@@ -283,6 +325,9 @@ def main():
         random_margin=args.random_margin,
         margin_min=args.margin_min,
         margin_max=args.margin_max,
+        small_tumor_thresh=args.small_tumor_thresh,
+        small_tumor_repeat_scale=args.small_tumor_repeat_scale,
+        no_tumor_repeat_scale=args.no_tumor_repeat_scale,
     )
 
     val_ds = TumorROIDataset(
@@ -355,7 +400,6 @@ def main():
     #如果stage1和stage2 的模型都一样,可以传,但是不一样可以不传,影响都不大
     if args.init_ckpt:
         load_init_weights(args.init_ckpt, model, map_location=device)
-
     # 如果需要 resume 训练
     if args.resume:
         ckpt = load_ckpt_full(

@@ -46,6 +46,12 @@ class TumorROIDataset(Dataset):
           0 = non-tumor
           1 = tumor (label == 2)
     5) 再交给 transform 做 patch crop / augment
+
+    差异化 oversampling（hard case mining）:
+    - 无肿瘤 case（tumor_voxels == 0）: repeat × no_tumor_repeat_scale
+    - 小肿瘤 case（0 < tumor_voxels < small_tumor_thresh）: repeat × small_tumor_repeat_scale
+    - 正常 case: repeat × 1
+    通过在 __init__ 时预扫描 label 统计每个 case 的肿瘤体素数来分类。
     """
 
     def __init__(
@@ -60,6 +66,9 @@ class TumorROIDataset(Dataset):
         random_margin: bool = False,
         margin_min: int = 8,
         margin_max: int = 20,
+        small_tumor_thresh: int = 0,
+        small_tumor_repeat_scale: int = 1,
+        no_tumor_repeat_scale: int = 1,
     ) -> None:
         self.pt_paths = [str(p) for p in pt_paths]
         self.transform = transform
@@ -71,6 +80,9 @@ class TumorROIDataset(Dataset):
         self.random_margin = bool(random_margin)
         self.margin_min = int(margin_min)
         self.margin_max = int(margin_max)
+        self.small_tumor_thresh = int(small_tumor_thresh)
+        self.small_tumor_repeat_scale = int(small_tumor_repeat_scale)
+        self.no_tumor_repeat_scale = int(no_tumor_repeat_scale)
 
         if len(self.pt_paths) == 0:
             raise ValueError("pt_paths 是空的")
@@ -83,8 +95,54 @@ class TumorROIDataset(Dataset):
         if self.margin_min > self.margin_max:
             raise ValueError("margin_min 必须 <= margin_max")
 
+        # 构建差异化 index 列表
+        self._indices = self._build_indices()
+
+    def _count_tumor_voxels(self, pt_path: str) -> int:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            data = torch.load(pt_path, map_location="cpu", weights_only=False, mmap=True)
+        return int((data["label"] == 2).sum().item())
+
+    def _build_indices(self) -> list[int]:
+        """
+        根据每个 case 的肿瘤体素数分配 repeat 次数，返回展开后的 case index 列表。
+        只有当 small_tumor_thresh > 0 或 no/small_tumor_repeat_scale > 1 时才扫描。
+        """
+        use_hard_mining = (
+            self.small_tumor_thresh > 0
+            and (self.small_tumor_repeat_scale > 1 or self.no_tumor_repeat_scale > 1)
+        )
+        if not use_hard_mining:
+            return list(range(len(self.pt_paths))) * self.repeats
+
+        indices = []
+        n_no_tumor = 0
+        n_small_tumor = 0
+        n_normal = 0
+        for i, pt_path in enumerate(self.pt_paths):
+            voxels = self._count_tumor_voxels(pt_path)
+            if voxels == 0:
+                r = self.repeats * self.no_tumor_repeat_scale
+                n_no_tumor += 1
+            elif voxels < self.small_tumor_thresh:
+                r = self.repeats * self.small_tumor_repeat_scale
+                n_small_tumor += 1
+            else:
+                r = self.repeats
+                n_normal += 1
+            indices.extend([i] * r)
+        print(
+            f"[TumorROIDataset] hard mining: "
+            f"no_tumor={n_no_tumor}×{self.no_tumor_repeat_scale}, "
+            f"small_tumor(<{self.small_tumor_thresh})={n_small_tumor}×{self.small_tumor_repeat_scale}, "
+            f"normal={n_normal}×1 | "
+            f"total indices={len(indices)}"
+        )
+        return indices
+
     def __len__(self) -> int:
-        return len(self.pt_paths) * self.repeats
+        return len(self._indices)
 
     def _sample_margin(self) -> int:
         """
@@ -134,7 +192,7 @@ class TumorROIDataset(Dataset):
         return (z0, z1, y0, y1, x0, x1)
 
     def __getitem__(self, idx: int):
-        case_idx = idx % len(self.pt_paths)
+        case_idx = self._indices[idx]
         pt_path = self.pt_paths[case_idx]
 
         with warnings.catch_warnings():
