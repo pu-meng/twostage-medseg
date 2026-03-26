@@ -31,4 +31,5 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --small_tumor_thresh 500 \
   --small_tumor_repeat_scale 4 \
   --no_tumor_repeat_scale 2 \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox/train/03-26-11-29-14/best.pt
+  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox/train/03-26-16-38-04/last.pt

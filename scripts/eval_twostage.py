@@ -69,7 +69,7 @@ def parse_args():
                    help="结果保存目录，默认从 stage2_ckpt 自动推导为 <exp_root>/eval")
     p.add_argument("--save_vis", action="store_true", help="保存可视化png")
     p.add_argument("--vis_n", type=int, default=10, help="最多保存前N个case的可视化")
-    p.add_argument("--min_tumor_size", type=int, default=50)
+    p.add_argument("--min_tumor_size", type=int, default=100)
     p.add_argument("--tta", action="store_true",
                    help="测试时增强：对D/H/W三轴所有翻转组合推理后取平均（8次推理，更稳定但更慢）")
     p.add_argument("--tta_stage1", action="store_true",

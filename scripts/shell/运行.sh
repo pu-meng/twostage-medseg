@@ -111,7 +111,8 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
   --overlap 0.5 \
   --split test \
   --save_vis --vis_n 10 \
-  --margin 12
+  --margin 12 \
+  --min_tumor_size 100
 
 
 # ============================================================
@@ -133,7 +134,8 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
   --overlap 0.5 \
   --split test \
   --save_vis --vis_n 10 \
-  --margin 12
+  --margin 12 \
+  --min_tumor_size 100
 
 
 # ============================================================
@@ -202,7 +204,8 @@ CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
   --val_ratio 0.2 --test_ratio 0.1 --seed 0 \
   --overlap 0.5 \
   --split test \
-  --margin 12
+  --margin 12 \
+  --min_tumor_size 100
 
 # step2: 加TTA（save_dir 单独指定，避免覆盖 step1 结果）
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
@@ -218,4 +221,5 @@ CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
   --split test \
   --margin 12 \
   --tta \
+  --min_tumor_size 100 \
   --save_dir $EXP/tumor_dynunet_roi_jitter/eval_tta
