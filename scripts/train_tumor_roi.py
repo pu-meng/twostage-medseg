@@ -9,6 +9,7 @@ from datetime import datetime
 
 import torch
 from torch.utils.data import DataLoader
+from monai.data import list_data_collate
 from medseg.data.dataset_offline import load_pt_paths, split_three_ways
 from medseg.data.transforms_offline import (
     build_train_transforms,
@@ -60,10 +61,10 @@ def add_medseg_to_syspath(medseg_root: str) -> None:
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--medseg_root", type=str, required=True)
-    p.add_argument("--preprocessed_root", type=str, required=True)
+    p.add_argument("--medseg_root", type=str, required=True,help="medseg的根目录")
+    p.add_argument("--preprocessed_root", type=str, required=True,help="预处理后的数据集路径")
     p.add_argument(
-        "--exp_root", type=str, default="/home/pumengyu/experiments_twostage"
+        "--exp_root", type=str, default="/home/pumengyu/experiments",help="输出结果的保存路径"
     )
     p.add_argument("--exp_name", type=str, default="tumor_roi_dynunet")
     p.add_argument("--model", type=str, default="dynunet")
@@ -74,14 +75,14 @@ def parse_args():
     p.add_argument("--test_ratio", type=float, default=0.1)
     p.add_argument("--patch", type=int, nargs=3, default=[96, 96, 96])
     p.add_argument("--val_patch", type=int, nargs=3, default=[96, 96, 96])
-    p.add_argument("--sw_batch_size", type=int, default=1)
-    p.add_argument("--overlap", type=float, default=0.5)
+    p.add_argument("--sw_batch_size", type=int, default=1,help="只在验证时候用,训练不用")
+    p.add_argument("--overlap", type=float, default=0.5,help="只在验证用overlap,")
     p.add_argument("--num_workers", type=int, default=2)
 
-    p.add_argument("--prefetch_factor", type=int, default=4)
+    p.add_argument("--prefetch_factor", type=int, default=4,help="表示每个worker提前预加载的batch数量,只在num_workers>0时有效;会占用CPU内存,不影响GPU的显存")
 
     p.add_argument("--repeats", type=int, default=3)
-    p.add_argument("--amp", action="store_true")
+    p.add_argument("--amp", action="store_true",help="store_true表示这个参数出现就是True,不出现为False")
     p.add_argument(
         "--loss", type=str, default="dicece", choices=["dicece", "dicefocal", "tversky"]
     )
@@ -90,7 +91,14 @@ def parse_args():
     p.add_argument("--train_n", type=int, default=0)
     p.add_argument("--val_n", type=int, default=0)
     p.add_argument("--resume", type=str, default=None)
-    p.add_argument("--init_ckpt", type=str, default=None)  # 新增的初始化权重参数
+    p.add_argument("--init_ckpt", type=str, default=None,
+                   help="初始化模型权重路径（热启动）。"
+                        "不传则从随机初始化开始训练；"
+                        "第一次训练可传 Stage1 肝脏模型的 best.pt 做迁移学习；"
+                        "后续迭代传上一次肿瘤模型的 best.pt 继续积累。"
+                        "注意：训练时 ROI 裁剪始终用 GT 真实肝脏标签，不需要 Stage1 模型参与；"
+                        "Stage1 肝脏模型只在 eval/infer 阶段才真正用到（推理时无 GT，靠 Stage1 预测肝脏位置）。"
+                        "只加载模型权重，optimizer/scheduler/epoch 全部重置，可自由修改 LR 和训练策略。")
     p.add_argument("--tumor_ratios", type=float, nargs=2, default=[0.2, 0.8])
     p.add_argument("--margin", type=int, default=12)
     # parse_args() 里新增一个参数
@@ -99,14 +107,19 @@ def parse_args():
         action="store_true",
         help="启用可学习权重损失(alpha自动学习liver/tumor平衡)",
     )
-    p.add_argument("--bbox_jitter", action="store_true")
-    p.add_argument("--bbox_max_shift", type=int, default=8)
-    p.add_argument("--random_margin", action="store_true")
-    p.add_argument("--margin_min", type=int, default=8)
-    p.add_argument("--margin_max", type=int, default=20)
+    p.add_argument("--bbox_jitter", action="store_true",
+                   help="对肝脏 bbox 施加随机扰动，模拟 Stage1 预测框的偏差，增强鲁棒性")
+    p.add_argument("--bbox_max_shift", type=int, default=8,
+                   help="bbox 扰动的最大偏移量（体素），仅在 --bbox_jitter 开启时生效，默认 8")
+    p.add_argument("--random_margin", action="store_true",
+                   help="对 ROI margin 进行随机采样，模拟不同裁剪尺度，增强泛化能力")
+    p.add_argument("--margin_min", type=int, default=8,
+                   help="随机 margin 的最小值（体素），仅在 --random_margin 开启时生效，默认 8")
+    p.add_argument("--margin_max", type=int, default=20,
+                   help="随机 margin 的最大值（体素），仅在 --random_margin 开启时生效，默认 20")
     # 差异化 oversampling：小肿瘤/无肿瘤 hard case mining
     p.add_argument("--small_tumor_thresh", type=int, default=0,
-                   help="小肿瘤阈值(voxels)，0=关闭 hard mining")
+                   help="小肿瘤阈值(voxels),0=关闭 hard mining")
     p.add_argument("--small_tumor_repeat_scale", type=int, default=3,
                    help="小肿瘤 case 的 repeat 倍率")
     p.add_argument("--no_tumor_repeat_scale", type=int, default=4,
@@ -115,7 +128,19 @@ def parse_args():
     p.add_argument("--hard_cases_only", action="store_true",
                    help="只用无肿瘤+小肿瘤困难样本训练，需同时设置 --small_tumor_thresh")
     p.add_argument("--normal_case_ratio", type=float, default=0.0,
-                   help="hard_cases_only 时额外混入的普通样本比例(0~1)，0=不混入，防止灾难遗忘")
+                   help="hard_cases_only 时额外混入的普通样本比例(0~1),0=不混入，防止灾难遗忘")
+
+    # 预测 bbox 模式：用 Stage1 推理结果代替 GT bbox，消除训练/推理 domain gap
+    p.add_argument("--use_pred_bbox", action="store_true",
+                   help="启用后，训练集 bbox 由 Stage1 推理生成，与推理阶段完全对齐，关闭此开关则保持原 GT bbox + jitter 行为")
+    p.add_argument("--stage1_ckpt", type=str, default=None,
+                   help="Stage1 肝脏模型路径，--use_pred_bbox 时必须提供")
+    p.add_argument("--stage1_model", type=str, default="dynunet",
+                   help="Stage1 模型类型，默认 dynunet，与 --use_pred_bbox 配合使用")
+    p.add_argument("--stage1_patch", type=int, nargs=3, default=[144, 144, 144],
+                   help="Stage1 推理 patch 大小，默认 144 144 144")
+    p.add_argument("--pred_bbox_cache", type=str, default=None,
+                   help="pred bbox JSON 缓存路径。存在则直接读取跳过推理，不存在则推理后自动保存，不传则每次重新推理")
 
     return p.parse_args()
 
@@ -123,7 +148,7 @@ def parse_args():
 def load_init_weights(path, model, map_location="cpu"):
     """
 
-            ckpt=checkpoint,src=source,dst=destination
+        ckpt=checkpoint,src=source,dst=destination
         ckpt是训练过程中的保存的快照,可以包含模型参数,优化器状态,训练轮数,loss值
         model是PyTorch的nn.Module对象,比如model=UNet(),model=ResNet50()
         dst=model.state_dict()
@@ -160,6 +185,95 @@ def load_init_weights(path, model, map_location="cpu"):
     print(f"[init] loaded {len(matched)} matched params from {path}")
 
 
+def build_pred_bboxes(stage1_ckpt, pt_paths, device, stage1_model, stage1_patch, overlap,
+                      cache_path=None):
+    """
+    用 Stage1 肝脏模型对训练集推理，返回每个 case 的预测 tight bbox（margin=0）字典。
+
+    返回格式: {case_name: (z0, z1, y0, y1, x0, x1)}
+    tight bbox 不含 margin，margin 在 TumorROIDataset.__getitem__ 中动态叠加，
+    这样 random_margin 仍然生效，模拟推理时不同 margin 的尺度变化。
+
+    cache_path: JSON 缓存路径。
+        - 文件已存在 -> 直接读取，跳过推理（节省 5~10 分钟）
+        - 文件不存在 -> 推理完后自动保存，下次可复用
+        - None       -> 纯内存，每次重新推理，不读写磁盘
+
+    若 Stage1 未预测到肝脏（极少数情况），自动回退到 GT bbox，并打印 warning。
+    运行完毕后立即释放 Stage1 模型，不占用后续训练的显存。
+    """
+    import warnings as _w
+    from pathlib import Path as _Path
+    from monai.inferers.utils import sliding_window_inference
+    from metrics.filter import filter_largest_component
+    from twostage.roi_utils import compute_bbox_from_mask
+
+    # 命中缓存：直接读 JSON，跳过推理
+    if cache_path is not None and os.path.exists(cache_path):
+        with open(cache_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        # JSON 存的是 list，转回 tuple
+        pred_bboxes = {k: tuple(v) for k, v in raw.items()}
+        print(f"[pred_bbox] loaded from cache ({len(pred_bboxes)} cases): {cache_path}")
+        return pred_bboxes
+
+    stage1 = build_model(stage1_model, in_channels=1, out_channels=2, img_size=tuple(stage1_patch)).to(device)
+    load_init_weights(stage1_ckpt, stage1, map_location=device)
+    stage1.eval()
+
+    pred_bboxes = {}
+    print(f"[pred_bbox] Stage1 generating predicted bboxes for {len(pt_paths)} cases ...")
+
+    with torch.no_grad():
+        for i, pt_path in enumerate(pt_paths):
+            case_name = _Path(pt_path).stem
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", FutureWarning)
+                data = torch.load(pt_path, map_location="cpu", weights_only=False, mmap=True)
+
+            image = data["image"].float()
+            x = image.unsqueeze(0).to(device)  # [1,1,D,H,W]
+
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=(device == "cuda")):
+                logits = sliding_window_inference(
+                    inputs=x, roi_size=tuple(stage1_patch),
+                    sw_batch_size=1, predictor=stage1, overlap=overlap,
+                )
+
+            if isinstance(logits, (tuple, list)):
+                logits = logits[0]
+
+            pred = torch.argmax(logits.float(), dim=1)[0].cpu()
+            liver_mask = pred == 1
+            liver_mask = filter_largest_component(liver_mask)
+
+            if liver_mask.sum().item() == 0:
+                # Stage1 未检出肝脏，用 GT 保底
+                gt_liver = data["label"][0] > 0
+                bbox = compute_bbox_from_mask(gt_liver.bool(), margin=0)
+                print(f"  [warn] {case_name}: Stage1 missed liver, fallback to GT bbox")
+            else:
+                bbox = compute_bbox_from_mask(liver_mask, margin=0)  # tight, no margin
+
+            pred_bboxes[case_name] = bbox
+
+            if (i + 1) % 20 == 0 or (i + 1) == len(pt_paths):
+                print(f"  [{i + 1}/{len(pt_paths)}] done")
+
+    del stage1
+    torch.cuda.empty_cache()
+    print(f"[pred_bbox] done, {len(pred_bboxes)} bboxes generated")
+
+    # 保存缓存：tuple 序列化为 list 存入 JSON
+    if cache_path is not None:
+        os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump({k: list(v) for k, v in pred_bboxes.items()}, f, indent=2)
+        print(f"[pred_bbox] cache saved to: {cache_path}")
+
+    return pred_bboxes
+
+
 def pt_has_tumor(pt_path: str) -> bool:
     """
     判断一个 .pt case 是否含有 tumor
@@ -174,6 +288,11 @@ def pt_has_tumor(pt_path: str) -> bool:
 
 
 def filter_tumor_positive_cases(pt_paths):
+    """
+    筛选出含有肿瘤的 case的路径列表
+    和不含肿瘤的case的路径列表
+    
+    """
     pos = []
     neg = []
     for p in pt_paths:
@@ -189,6 +308,7 @@ def main():
     add_medseg_to_syspath(args.medseg_root)
 
     set_seed(args.seed)
+    torch.backends.cudnn.benchmark = True  # 固定patch尺寸时自动选最快卷积算法
 
     all_pt = load_pt_paths(args.preprocessed_root)
     tr, va, te = split_three_ways(
@@ -212,17 +332,25 @@ def main():
             raise ValueError("--hard_cases_only 需要同时设置 --small_tumor_thresh > 0")
         import warnings as _w
         import random as _random
+
         def _tumor_voxels(p):
             with _w.catch_warnings():
                 _w.simplefilter("ignore", FutureWarning)
                 d = torch.load(p, map_location="cpu", weights_only=False, mmap=True)
             return int((d["label"] == 2).sum().item())
+        
+        # 按肿瘤体素数把训练集分成两组路径列表：
+        # tr_hard：无肿瘤 或 小肿瘤（体素数 < small_tumor_thresh）的困难样本
+        # tr_normal：其余普通样本
         tr_hard = [p for p in tr if _tumor_voxels(p) < args.small_tumor_thresh]
         tr_normal = [p for p in tr if p not in set(tr_hard)]
+
+        # 从普通样本里按比例随机抽取 n_mix 个混入，防止模型只见困难样本导致灾难遗忘
+        # normal_case_ratio=0.3 表示取普通样本总数的 30%
         n_mix = int(len(tr_normal) * args.normal_case_ratio)
         if n_mix > 0:
-            mixed = _random.sample(tr_normal, n_mix)
-            tr = tr_hard + mixed
+            mixed = _random.sample(tr_normal, n_mix)  # 不重复随机抽取 n_mix 个路径
+            tr = tr_hard + mixed  # 最终训练集 = 全部困难样本 + 少量普通样本
             print(f"[hard_cases_only] 全部训练 case: {len(tr_hard) + len(tr_normal)} → "
                   f"困难样本: {len(tr_hard)}, 混入普通样本: {n_mix}/{len(tr_normal)} "
                   f"(ratio={args.normal_case_ratio}), 共 {len(tr)} cases")
@@ -230,6 +358,23 @@ def main():
             tr = tr_hard
             print(f"[hard_cases_only] 全部训练 case: {len(tr_hard) + len(tr_normal)} → 困难样本: {len(tr_hard)}"
                   f" (无肿瘤 + tumor < {args.small_tumor_thresh} voxels)")
+
+    # 预测 bbox 模式：训练开始前用 Stage1 对训练集推理一次，生成 bbox 字典
+    # 训练集和验证集分开处理：验证集始终用 GT bbox（eval 阶段不存在 domain gap 问题）
+    pred_bboxes_train = None
+    if args.use_pred_bbox:
+        if not args.stage1_ckpt:
+            raise ValueError("--use_pred_bbox 需要同时提供 --stage1_ckpt")
+        _device_bbox = "cuda" if torch.cuda.is_available() else "cpu"
+        pred_bboxes_train = build_pred_bboxes(
+            stage1_ckpt=args.stage1_ckpt,
+            pt_paths=tr,
+            device=_device_bbox,
+            stage1_model=args.stage1_model,
+            stage1_patch=args.stage1_patch,
+            overlap=args.overlap,
+            cache_path=args.pred_bbox_cache,
+        )
 
     # tr_pos是有肿瘤的路径列表，tr_neg是没有肿瘤的路径列表
     te_pos, te_neg = filter_tumor_positive_cases(te)
@@ -297,16 +442,27 @@ def main():
         "no_tumor_repeat_scale": int(args.no_tumor_repeat_scale),
         "hard_cases_only": bool(args.hard_cases_only),
         "normal_case_ratio": float(args.normal_case_ratio),
+        "use_pred_bbox": bool(args.use_pred_bbox),
+        "stage1_ckpt": args.stage1_ckpt,
+        "stage1_model": args.stage1_model,
+        "stage1_patch": list(args.stage1_patch),
+        "pred_bbox_cache": args.pred_bbox_cache,
     }
     save_json(config, workdir, "config")
+    # 初始化诊断日志器，结果写入 workdir/diag.txt 和 diag_summary.txt
     diag = DiagLogger(workdir)
-    #下面的是对数据的健康检查
+
+    # 记录数据集划分统计：train/val/test 各有多少 case，其中含肿瘤的有多少
     diag.log_dataset(args, tr, va, te, tr_pos_cur, va_pos_cur)
 
+    # 数据泄漏检查：确认 train/val/test 三组之间没有重复的 case
     diag.check_data_leakage(tr_all, va_all, te_all)
 
+    # 抽样检查标签分布：统计前 N 个 case 里 background/liver/tumor 各占多少体素
     diag.log_label_stats(tr, tag="train", max_cases=10)
     diag.log_label_stats(va, tag="val", max_cases=5)
+
+    # 抽样检查肝脏 ROI 裁剪后的尺寸分布，确认 patch 能覆盖大多数 ROI
     diag.log_roi_stats(tr, tag="train", max_cases=10, tumor_label=2)
 
     train_tf = build_train_transforms(
@@ -328,6 +484,7 @@ def main():
         small_tumor_thresh=args.small_tumor_thresh,
         small_tumor_repeat_scale=args.small_tumor_repeat_scale,
         no_tumor_repeat_scale=args.no_tumor_repeat_scale,
+        pred_bboxes=pred_bboxes_train,  # None 时行为与之前完全一致
     )
 
     val_ds = TumorROIDataset(
@@ -351,6 +508,7 @@ def main():
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=args.prefetch_factor,
+            collate_fn=list_data_collate,  # 支持 num_samples=2 展平为 batch_size*2
         )
         val_loader = DataLoader(
             val_ds,
@@ -368,6 +526,7 @@ def main():
             shuffle=True,
             num_workers=0,
             pin_memory=True,
+            collate_fn=list_data_collate,  # 支持 num_samples=2 展平为 batch_size*2
         )
         val_loader = DataLoader(
             val_ds, batch_size=1, shuffle=False, num_workers=0, pin_memory=True
@@ -377,6 +536,10 @@ def main():
     model = build_model(
         args.model, in_channels=1, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
+
+    torch._dynamo.config.suppress_errors = True #保险:编译失败不崩溃
+
+    model = torch.compile(model)  # 自动优化计算图，首epoch编译慢，之后每epoch提速10~30%
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     if args.learnable_loss:
         criterion = LearnableWeightedLoss(base_loss_type=args.loss).to(device)

@@ -19,7 +19,7 @@ class DiagLogger:
 
     生成文件：
       diag.txt      人类可读的完整诊断日志
-      diag_summary.txt  精简摘要，专门用于贴给AI
+      diag_summary.txt  精简摘要,专门用于贴给AI
     """
 
     def __init__(self, workdir: str):
