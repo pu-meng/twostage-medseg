@@ -146,6 +146,38 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
 # tumor_dynunet_augv2 (val dice 0.3157, stopped)
 # reason: no_tumor_repeat_scale=4 too aggressive, model became overly conservative
 
+# ============================================================
+# baseline: dynunet_singlestage
+# 全图直接预测 bg/liver/tumor（3类），不裁 ROI，不分两阶段
+# 对比用：证明 two-stage 比 single-stage 好多少
+# ============================================================
+
+CUDA_VISIBLE_DEVICES=1 python -m scripts.train \
+  --task liver \
+  --exp_name dynunet_singlestage \
+  --model dynunet \
+  --preprocessed_root $DATA \
+  --num_classes 3 \
+  --epochs 300 \
+  --batch_size 1 \
+  --lr 3e-3 \
+  --patch 144 144 144 \
+  --val_patch 144 144 144 \
+  --sw_batch_size 1 \
+  --val_every 5 \
+  --num_workers 4 \
+  --prefetch_factor 4 \
+  --early_ratios 0.1 0.9 \
+  --late_ratios 0.1 0.9 \
+  --amp \
+  --loss dicefocal \
+  --overlap 0.5 \
+  --repeats 3
+
+# 注意：不加 --merge_label12_to1，不加 --init_ckpt，从头训练
+# exp_root 默认是 /home/pumengyu/experiments（不是 twostage 子目录）
+
+
 目前最好的指标参数
 
 /home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
