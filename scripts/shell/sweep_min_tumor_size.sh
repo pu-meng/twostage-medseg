@@ -14,7 +14,7 @@ for SIZE in 0 100 200 500 1000; do
     echo "========================================"
     echo "[sweep] min_tumor_size=${SIZE}"
     echo "========================================"
-    CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
+    CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
         --medseg_root     $MEDSEG_ROOT \
         --preprocessed_root $PREPROCESSED_ROOT \
         --stage1_ckpt     $STAGE1_CKPT \
@@ -26,7 +26,7 @@ for SIZE in 0 100 200 500 1000; do
         --val_ratio       0.2 \
         --test_ratio      0.1 \
         --seed            0 \
-        --split           val \
+        --split           test \
         --margin          12 \
         --tta \
         --min_tumor_size  $SIZE \

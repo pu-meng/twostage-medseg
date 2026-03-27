@@ -4,31 +4,31 @@
 # ============================================================
 MEDSEG=/home/pumengyu/medseg_project
 DATA=/home/pumengyu/Task03_Liver_pt
-DATA_ROI=/home/pumengyu/Task03_Liver_roi   # 预裁剪肝脏ROI小文件，4.5x压缩，加载快
+DATA_ROI=/home/pumengyu/Task03_Liver_roi   # pre-cropped liver ROI, 4.5x smaller, faster loading
 EXP=/home/pumengyu/experiments/twostage
 
 STAGE1_CKPT=/home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
 ROIJITTER_CKPT=$EXP/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
-# ============================================================
-# training workflow
-# ============================================================
-# do not re-run 300 epochs from scratch every time you change code!
-# use --init_ckpt to warm-start from the previous best.pt.
-#
-# --init_ckpt : loads model weights only (shape-matched layers),
-#               optimizer / scheduler / epoch are all reset
-# --resume    : full checkpoint resume, use when continuing the same run
-#
-# chain:
-#   first run   --init_ckpt $STAGE1_CKPT   (transfer from liver model)
-#   later runs  --init_ckpt previous best.pt
+============================================================
+training workflow
+============================================================
+do not re-run 300 epochs from scratch every time you change code!
+use --init_ckpt to warm-start from the previous best.pt.
+
+--init_ckpt : loads model weights only (shape-matched layers),
+              optimizer / scheduler / epoch are all reset
+--resume    : full checkpoint resume, use when continuing the same run
+
+chain:
+  first run   --init_ckpt $STAGE1_CKPT   (transfer from liver model)
+  later runs  --init_ckpt previous best.pt
 
 
-# ============================================================
-# exp1: tumor_dynunet_roi_jitter (做目前为止最好, val dice 0.4697)
-# GT bbox + bbox_jitter + random_margin, full training set
-# ============================================================
+============================================================
+exp1: tumor_dynunet_roi_jitter (best so far, val dice 0.4697)
+GT bbox + bbox_jitter + random_margin, full training set
+============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --medseg_root $MEDSEG \
@@ -56,12 +56,12 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --init_ckpt $STAGE1_CKPT
 
 
-# ============================================================
-# exp2: tumor_dynunet_predbbox (next experiment)
-# 使用 Stage1 预测的 bbox 代替 GT bbox -> no domain gap
-# small tumor (<500 voxels) oversampled x4 to reduce missed detections
-# warm-start from roi_jitter best.pt
-# ============================================================
+============================================================
+exp2: tumor_dynunet_predbbox (next experiment)
+use Stage1 predicted bbox instead of GT bbox -> no domain gap
+small tumor (<500 voxels) oversampled x4 to reduce missed detections
+warm-start from roi_jitter best.pt
+============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --medseg_root $MEDSEG \
@@ -94,13 +94,13 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --init_ckpt $ROIJITTER_CKPT
 
 
-# ============================================================
-# exp3: tumor_dynunet_predbbox_roi (当前推荐实验)
-# 同 exp2 逻辑，但用预裁剪 ROI 小文件（130GB→30GB）
-# 解决 exp2 每 epoch 50min 磁盘IO瓶颈，恢复到 ~10min/epoch
-# __getitem__ 检测到 crop_bbox 字段自动走 ROI 快速路径
-# 去掉 --use_pred_bbox（pred_bbox 已内嵌在 ROI 文件里）
-# ============================================================
+============================================================
+实验3: tumor_dynunet_predbbox_roi (recommended)
+same logic as exp2, but use pre-cropped ROI files (130GB->30GB)
+fixes exp2 disk IO bottleneck (50min/epoch -> ~10min/epoch)
+__getitem__ auto-detects crop_bbox key and takes fast path
+removed --use_pred_bbox (pred_bbox already embedded in ROI files)
+============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --medseg_root $MEDSEG \
@@ -131,6 +131,76 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 
 
 # ============================================================
+# 实验4: tumor_dynunet_predbbox_roi_clean  ← 当前推荐
+# 控制变量: 只测 pred_bbox ROI，不加 hard mining
+# 对比基线: exp1 GT bbox 300ep；epoch数保持一致，只改 ROI 来源
+# repeats=1 无 hard mining，epochs=300 → 预计 ~33h
+# ============================================================
+
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root $MEDSEG \
+  --preprocessed_root $DATA_ROI \
+  --exp_root $EXP \
+  --exp_name tumor_dynunet_predbbox_roi_clean \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 2 \
+  --lr 3e-3 \
+  --patch 96 96 96 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 2 \
+  --val_every 3 \
+  --num_workers 4 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss dicefocal \
+  --overlap 0.5 \
+  --repeats 1 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
+  --random_margin --margin_min 8 --margin_max 24 \
+  --init_ckpt $ROIJITTER_CKPT
+
+
+# ============================================================
+# 实验5: tumor_dynunet_predbbox_roi_hardmine  ← 实验4完成后运行
+# 在实验4 best.pt 基础上加 hard mining finetune
+# 变量: 只加 hard mining，ROI/epoch/其他不变
+# PREDBBOX_CLEAN_CKPT 跑完实验4后替换为实际路径
+# repeats=1，hard mining scaling → 预计 ~50-55h（小肿瘤case变多）
+# ============================================================
+
+PREDBBOX_CLEAN_CKPT=$EXP/tumor_dynunet_predbbox_roi_clean/train/TIMESTAMP/best.pt
+
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root $MEDSEG \
+  --preprocessed_root $DATA_ROI \
+  --exp_root $EXP \
+  --exp_name tumor_dynunet_predbbox_roi_hardmine \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 2 \
+  --lr 3e-3 \
+  --patch 96 96 96 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 2 \
+  --val_every 3 \
+  --num_workers 4 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss dicefocal \
+  --overlap 0.5 \
+  --repeats 1 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
+  --random_margin --margin_min 8 --margin_max 24 \
+  --small_tumor_thresh 500 \
+  --small_tumor_repeat_scale 4 \
+  --no_tumor_repeat_scale 2 \
+  --init_ckpt $PREDBBOX_CLEAN_CKPT
+
+
+# ============================================================
 # eval: single model
 # replace TIMESTAMP with the actual run directory name
 # save_dir is auto-derived from stage2_ckpt, no need to set manually
@@ -153,7 +223,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
 
 
 # ============================================================
-# eval: 集成两个模型 (two models combined)
+# eval: ensemble two models
 # stage2_ckpt = new model, stage2_ckpt_b = roi_jitter as second model
 # ============================================================
 
@@ -187,8 +257,8 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
 
 # ============================================================
 # baseline: dynunet_singlestage
-# 全图直接预测 bg/liver/tumor（3类），不裁 ROI，不分两阶段
-# 对比用：证明 two-stage 比 single-stage 好多少
+# predict bg/liver/tumor (3 classes) on full volume, no ROI crop, no two-stage
+# reference: shows how much two-stage improves over single-stage
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python -m scripts.train \
@@ -213,21 +283,21 @@ CUDA_VISIBLE_DEVICES=1 python -m scripts.train \
   --overlap 0.5 \
   --repeats 3
 
-# 注意：不加 --merge_label12_to1，不加 --init_ckpt，从头训练
-# exp_root 默认是 /home/pumengyu/experiments（不是 twostage 子目录）
+# note: no --merge_label12_to1, no --init_ckpt, train from scratch
+# exp_root defaults to /home/pumengyu/experiments (not the twostage subdirectory)
 
 
-目前最好的指标参数
+# best checkpoint so far
 
 /home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
 
 # ============================================================
-# eval: TTA 对比实验（同一个 checkpoint，唯一区别是有无 --tta）
-# 先跑无TTA baseline，再跑TTA，对比纯收益
+# eval: TTA comparison (same checkpoint, only difference is --tta)
+# run without TTA first as baseline, then with TTA, compare the gain
 # ============================================================
 
-# step1: 无TTA baseline
+# step1: no TTA baseline
 
 
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
@@ -244,7 +314,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
   --margin 12 \
   --min_tumor_size 100
 
-# step2: 加TTA（save_dir 单独指定，避免覆盖 step1 结果）
+# step2: with TTA (separate save_dir to avoid overwriting step1 results)
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
   --medseg_root $MEDSEG \
   --preprocessed_root $DATA \

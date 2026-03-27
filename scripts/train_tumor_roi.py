@@ -97,8 +97,8 @@ def parse_args():
                         "第一次训练可传 Stage1 肝脏模型的 best.pt 做迁移学习；"
                         "后续迭代传上一次肿瘤模型的 best.pt 继续积累。"
                         "注意：训练时 ROI 裁剪始终用 GT 真实肝脏标签，不需要 Stage1 模型参与；"
-                        "Stage1 肝脏模型只在 eval/infer 阶段才真正用到（推理时无 GT，靠 Stage1 预测肝脏位置）。"
-                        "只加载模型权重，optimizer/scheduler/epoch 全部重置，可自由修改 LR 和训练策略。")
+                        "Stage1 肝脏模型只在 eval/infer 阶段才真正用到（推理时无 GT,靠 Stage1 预测肝脏位置）。"
+                        "只加载模型权重,optimizer/scheduler/epoch 全部重置，可自由修改 LR 和训练策略。")
     p.add_argument("--tumor_ratios", type=float, nargs=2, default=[0.2, 0.8])
     p.add_argument("--margin", type=int, default=12)
     # parse_args() 里新增一个参数
@@ -136,7 +136,7 @@ def parse_args():
     p.add_argument("--stage1_ckpt", type=str, default=None,
                    help="Stage1 肝脏模型路径，--use_pred_bbox 时必须提供")
     p.add_argument("--stage1_model", type=str, default="dynunet",
-                   help="Stage1 模型类型，默认 dynunet，与 --use_pred_bbox 配合使用")
+                   help="Stage1 模型类型，默认 dynunet,与 --use_pred_bbox 配合使用")
     p.add_argument("--stage1_patch", type=int, nargs=3, default=[144, 144, 144],
                    help="Stage1 推理 patch 大小，默认 144 144 144")
     p.add_argument("--pred_bbox_cache", type=str, default=None,
