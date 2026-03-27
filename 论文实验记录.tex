@@ -1,0 +1,678 @@
+\documentclass{article}
+\usepackage{ctex}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{indentfirst}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{titlesec}
+
+\geometry{a4paper, margin=1in}
+
+% ---- 代码样式 ----
+\lstset{
+	language=Python,
+	basicstyle=\ttfamily\small,
+	numbers=left,
+	numberstyle=\tiny\color{gray},
+	showstringspaces=false,
+	breaklines=true,
+	frame=single,
+	tabsize=4,
+	keywordstyle=\color{blue!80!black},
+	commentstyle=\color{green!60!black},
+	stringstyle=\color{red!70!black},
+	xleftmargin=1em, xrightmargin=1em
+}
+
+\begin{document}
+	
+	\songti\zihao{-4}
+	
+	\begin{center}
+		\heiti\zihao{-3}\textbf{山东大学\ 数学学院} \\[4pt]
+		\heiti\zihao{-3}\textbf{图像分割实验报告}
+	\end{center}
+	
+	\vspace{0.8cm}
+	\noindent 学号：202511861\quad 姓名：普孟玉\quad 班级：应用数学\quad 日期：2026/2/11
+	\vspace{0.5cm}
+	
+	% ================================================================
+	\section{早期探索与问题分析}
+	% ================================================================
+	
+	\subsection{初始问题：肿瘤 Dice 极低}
+	
+	初始实验（epoch=3）中，tumor\_dice 接近 0，原因总结如下：
+	
+	\begin{enumerate}
+		\item \textbf{训练轮次太少}（epoch=3）：模型将肝内纹理/边缘误判为肿瘤；
+		\item \textbf{过采样偏向 tumor}（ratios=[0, 0.3, 0.7]）：模型形成先验，倾向于将更多区域判为肿瘤，假阳性爆炸；
+		\item \textbf{损失函数惩罚不足}（DiceCE baseline）：CE 无类别权重，易被数据分布带偏；
+		\item \textbf{任务本身困难}：肿瘤目标小且形态多样。
+	\end{enumerate}
+	
+	\noindent\textbf{根本链路：}早期训练 + tumor 过采样 + baseline loss
+	$\;\Rightarrow\;$ tumor 概率偏高 $\Rightarrow$ 假阳性爆炸 $\Rightarrow$ tumor Dice $\approx 0$
+	
+	\subsection{对照实验：ratios 与 Loss 的影响}
+	
+	损失函数定义如下：
+	
+	\begin{equation}
+		\mathcal{L}_{\text{CE}} = -\sum_{c=1}^{C} y_c \log(p_c)
+		\qquad
+		\mathcal{L}_{\text{Dice}} = 1 - \frac{2|P \cap G|}{|P|+|G|}
+		\qquad
+		\mathcal{L}_{\text{Focal}} = -(1-p_t)^{\gamma}\log(p_t)
+	\end{equation}
+	
+	\noindent 其中 $p_t$ 为 GT 类别的预测概率，$\gamma$ 为调节参数。
+	
+	\vspace{0.5em}
+	\noindent\textbf{RandCropByLabelClassesd} 的 ratios 含义：ratios=[0, 0.6, 0.4] 表示
+	60\% 的 patch 中心来自肝脏，40\% 来自肿瘤，保证训练时每个 patch 有较高概率覆盖肿瘤区域。
+	
+	\begin{table}[H]
+		\centering
+		\caption{UNet3D 对照实验结果}
+		\begin{tabular}{lcccr}
+			\hline
+			\textbf{实验配置} & \textbf{Class1 Dice} & \textbf{Class2 Dice} & \textbf{秒/case} & \textbf{epoch} \\
+			\hline
+			ratios=[0,0.3,0.7], DiceCE      & 0.1639 & 0.00024 & 2.49 & 3  \\
+			ratios=[0,0.6,0.4], DiceCE      & 0.1673 & 0.00033 & 2.87 & 3  \\
+			ratios=[0,0.6,0.4], DiceCE      & 0.2072 & 0.00092 & 2.91 & 10 \\
+			ratios=[0,0.6,0.4], DiceFocal $\gamma$=2 & 0.1711 & 0.00040 & 3.56 & 3  \\
+			ratios=[0,0.6,0.4], DiceFocal $\gamma$=2 & 0.1962 & 0.00126 & 2.90 & 10 \\
+			ratios=[0,0.6,0.4], DiceFocal $\gamma$=2 & 0.2831 & 0.02399 & 3.82 & 30 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\subsection{假阳性根因分析}
+	
+	通过统计发现：GT 平均肿瘤体素约 25{,}822，而模型预测平均肿瘤体素约 512{,}927，
+	模型将大量非肿瘤区域预测为肿瘤（FP 极多），由此拉低 Dice。
+	
+	尝试以预测的 liver mask 限制 tumor 预测范围（ROI 策略），结果每 case 平均预测体素
+	从 512{,}927 $\rightarrow$ 462{,}358，仅降低约 10\%，说明绝大部分假阳性发生在
+	\textbf{肝脏内部}，而非肝外区域，模型尚未真正学会区分肝内正常组织与肿瘤。
+	
+	\subsection{进一步改进与 UNet3D 最终结果}
+	
+	主要改动：
+	\begin{enumerate}
+		\item 预处理改为离线 \texttt{.pt} 文件，消除在线 LoadImaged/Spacing 等开销；
+		\item 数据增强：RandFlipd、RandRotate90d、RandGaussianNoised、RandAdjustContrastd 等；
+		\item 采样改为固定 ratios=[0, 1, 0]（全部以肝脏为中心），收敛更稳定；
+		\item num\_samples=1，repeats=4，每 epoch patch 数基本不变，但避免冗余增强开销。
+	\end{enumerate}
+	
+	以上述配置训练 200 epoch，在第 164 轮达到最优：
+	\textbf{Liver Dice = 0.4819，Tumor Dice = 0.2233}。
+	
+	% ================================================================
+	\section{数据集统计与训练配置}
+	% ================================================================
+	
+	\begin{table}[H]
+		\centering
+		\caption{数据集统计与核心超参}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{配置项} & \textbf{值} \\
+			\hline
+			显存            & 11 GB（NVIDIA RTX 2080 Ti） \\
+			spacing         & pixdim = (0.88, 0.88, 0.88) \\
+			window\_min     & $-13.66$（0.5\% 分位数） \\
+			window\_max     & $188.27$（99.5\% 分位数） \\
+			patch size      & $144\times144\times144$ \\
+			batch\_size     & 2 \\
+			overlap         & 0.5 \\
+			sw\_batch\_size & 3 \\
+			\hline
+			背景 (0)        & 97.72\% \\
+			肝脏 (1)        & 2.18\%，出现在 131/131 cases \\
+			肿瘤 (2)        & 0.10\%，出现在 118/131 cases \\
+			\hline
+			ratios（前 1/3 epoch） & [0, 0.7, 0.3] \\
+			ratios（后 2/3 epoch） & [0.0, 0.4, 0.6] \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	% ================================================================
+	\section{Two-Stage 肝脏/肿瘤分割实验记录}
+	% ================================================================
+	
+	\noindent\textbf{任务：} MSD Task03 Liver，两阶段分割（Stage1 肝脏 $\rightarrow$ Stage2 肿瘤）\\
+	\textbf{模型：} DynUNet (MONAI)\\
+	\textbf{数据划分（seed=0）：}
+	\begin{itemize}
+		\item train：92 cases（有肿瘤 82，无肿瘤 10）
+		\item val：26 cases
+		\item test：13 cases
+	\end{itemize}
+	
+	% ------------------------------------------------
+	\subsection{Stage 1 —— 肝脏模型（所有实验共用）}
+	
+	\begin{table}[H]
+		\centering
+		\caption{Stage 1 训练配置}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{项目} & \textbf{值} \\
+			\hline
+			目录            & \texttt{dynunet\_liver\_only/train/03-14-01-11-56} \\
+			模型            & DynUNet \\
+			Optimizer       & SGD, lr=$3\times10^{-3}$, momentum=0.99, weight\_decay=$3\times10^{-5}$ \\
+			LR Scheduler    & Poly 0.9 \\
+			Loss            & DiceCE \\
+			Patch           & $144\times144\times144$ \\
+			Epochs          & 200 \\
+			batch\_size     & 1 \\
+			数据备注        & label 1/2 合并为前景训练，train=92, val=26 \\
+			GPU             & NVIDIA RTX 2080 Ti \\
+			训练时长        & 22.93 h \\
+			\hline
+			\textbf{Val liver Dice (best)} & \textbf{0.8905}（epoch 198） \\
+			\textbf{Test liver Dice}       & \textbf{0.9594}（后续 eval 测得） \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	% ------------------------------------------------
+	\subsection{Stage 2 实验一 —— 基础肿瘤模型}
+	
+	\noindent\textbf{目录：} \texttt{twostage/tumor\_dynunet/train/03-17-09-22-42}
+	
+	\begin{table}[H]
+		\centering
+		\caption{Stage 2 实验一训练配置}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{项目} & \textbf{值} \\
+			\hline
+			init\_ckpt      & Stage 1 best.pt（迁移学习） \\
+			Optimizer       & AdamW, lr=$3\times10^{-3}$ \\
+			LR Scheduler    & CosineAnnealingLR, $T_{\max}=300$ \\
+			Loss            & DiceFocal \\
+			Patch           & $96\times96\times96$ \\
+			Epochs          & 300 \\
+			batch\_size     & 1 \\
+			数据            & train=82（仅肿瘤阳性 case），val=24 \\
+			bbox\_jitter    & 无 \\
+			random\_margin  & 无，固定 margin=8 \\
+			tumor\_ratios   & [0.05, 0.95]（5\% 背景，95\% 前景） \\
+			repeats         & 6 \\
+			训练时长        & 29.02 h \\
+			\hline
+			\textbf{Val tumor Dice (best)} & \textbf{0.3801}（epoch 264） \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\caption{实验一 Eval 结果（test split，13 cases）。注：三次 eval 未保存完整命令，参数不可考。}
+		\begin{tabular}{llll}
+			\hline
+			\textbf{eval 时间} & \textbf{liver Dice} & \textbf{tumor Dice} & \textbf{备注} \\
+			\hline
+			03-18-15-13 & 0.8927 & 0.5096 & liver Dice 偏低，推测 stage1 ckpt 不同或未过滤连通分量 \\
+			03-18-16-29 & 0.9594 & \textbf{0.5677} & 本次最优 \\
+			03-18-17-34 & 0.9594 & 0.5401 & 结果略差，原因不明 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	% ------------------------------------------------
+	\subsection{Stage 2 实验二 —— ROI Jitter 肿瘤模型}
+	
+	\noindent\textbf{核心改动：}
+	\begin{enumerate}
+		\item 训练数据从 82 扩展到 \textbf{92 cases}（加入无肿瘤 case）；
+		\item 新增 \textbf{bbox\_jitter}（max\_shift=8）：随机扰动 bbox 边界，模拟 Stage1 预测误差；
+		\item 新增 \textbf{random\_margin}（范围 [8, 20]）：随机化 ROI margin，模拟 bbox 尺度变化。
+	\end{enumerate}
+	
+	\begin{table}[H]
+		\centering
+		\caption{实验二 Run 1 配置（中断，仅作热启动）}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{项目} & \textbf{值} \\
+			\hline
+			目录        & \texttt{tumor\_dynunet\_roi\_jitter/train/03-22-10-47-09} \\
+			init\_ckpt  & Stage 1 best.pt \\
+			batch\_size & 1 \\
+			实际完成    & 仅 3 epoch 即中断 \\
+			备注        & last.pt 被 Run 2 的 \texttt{--resume} 继承 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\noindent\textbf{目录（Run 2）：} \texttt{twostage/tumor\_dynunet\_roi\_jitter/train/03-22-11-44-00}
+	
+	\begin{table}[H]
+		\centering
+		\caption{实验二 Run 2 训练配置（主体训练，接续 Run 1）}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{项目} & \textbf{值} \\
+			\hline
+			resume          & Run 1 的 last.pt（从第 3 epoch 继续） \\
+			init\_ckpt      & Stage 1 best.pt（用于 shape 匹配） \\
+			Optimizer       & AdamW, lr=$3\times10^{-3}$ \\
+			LR Scheduler    & CosineAnnealingLR, $T_{\max}=300$ \\
+			Loss            & DiceFocal \\
+			Patch           & $96\times96\times96$ \\
+			Epochs          & 300 \\
+			batch\_size     & 2（从 Run 1 的 1 改为 2） \\
+			sw\_batch\_size & 2 \\
+			num\_workers    & 4 \\
+			bbox\_jitter    & $\surd$\quad max\_shift=8 \\
+			random\_margin  & $\surd$\quad margin 范围 [8, 20] \\
+			数据            & train=92, val=26（含无肿瘤 case） \\
+			训练时长        & 45.92 h \\
+			\hline
+			\textbf{Val tumor Dice (best)} & \textbf{0.4697}（epoch 243） \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\caption{实验二 Run 2 训练曲线（每 60 epoch 快照）}
+		\begin{tabular}{cccc}
+			\hline
+			\textbf{epoch} & \textbf{loss} & \textbf{val tumor Dice} & \textbf{best} \\
+			\hline
+			60  & 0.5158 & 0.1809 & 0.2478 \\
+			120 & 0.4591 & 0.2958 & 0.3768 \\
+			180 & 0.3439 & 0.3882 & 0.4277 \\
+			240 & 0.3367 & 0.4294 & 0.4430 \\
+			300 & 0.3111 & 0.4415 & \textbf{0.4697} \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\noindent\textbf{Eval 结果（test split，13 cases，eval 时间 03-24-10-42）：}
+	
+	\begin{table}[H]
+		\centering
+		\caption{实验二 Eval 汇总指标}
+		\begin{tabular}{lcccc}
+			\hline
+			\textbf{指标} & \textbf{mean} & \textbf{std} & \textbf{min} & \textbf{max} \\
+			\hline
+			liver Dice      & 0.9594 & 0.026 & 0.879 & 0.976 \\
+			tumor Dice      & \textbf{0.5816} & 0.288 & 0.023 & 1.000 \\
+			tumor Recall    & 0.491  & 0.253 & 0.000 & 0.853 \\
+			tumor Precision & 0.631  & 0.377 & 0.000 & 0.989 \\
+			tumor FDR       & 0.292  & 0.341 & 0.000 & 0.988 \\
+			tumor FNR       & 0.432  & 0.243 & 0.000 & 0.923 \\
+			tumor Jaccard   & 0.389  & 0.259 & 0.000 & 0.755 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\small
+		\caption{实验二 Per-case Eval 明细}
+		\begin{tabular}{lccccc}
+			\hline
+			\textbf{case} & \textbf{liver Dice} & \textbf{tumor Dice} & \textbf{Recall} & \textbf{FDR} & \textbf{pred voxels} \\
+			\hline
+			liver\_87  & 0.9764 & 1.000 & 0.000 & 0.000 & 0（无肿瘤，正确预测为空） \\
+			liver\_7   & 0.9709 & 0.860 & 0.853 & 0.132 & 26{,}228 \\
+			liver\_27  & 0.9745 & 0.805 & 0.828 & 0.216 & 110{,}624 \\
+			liver\_78  & 0.9600 & 0.786 & 0.673 & 0.057 & 19{,}710 \\
+			liver\_36  & 0.9700 & 0.773 & 0.680 & 0.106 & 44{,}437 \\
+			liver\_37  & 0.9741 & 0.752 & 0.662 & 0.130 & 16{,}444 \\
+			liver\_40  & 0.9758 & 0.702 & 0.553 & 0.040 & 103{,}445 \\
+			liver\_71  & 0.9479 & 0.478 & 0.315 & 0.011 & 103{,}552（大肿瘤，只找到 31\%） \\
+			liver\_4   & 0.8793 & 0.511 & 0.354 & 0.080 & 558{,}902（超大肿瘤，只找到 35\%） \\
+			liver\_92  & 0.9738 & 0.459 & 0.360 & 0.366 & 797（预测体素极少） \\
+			liver\_107 & 0.9715 & 0.327 & 0.548 & 0.767 & 10{,}067（严重误报） \\
+			liver\_77  & 0.9344 & 0.086 & 0.077 & 0.902 & 15{,}348（几乎全漏+严重误报） \\
+			liver\_15  & 0.9633 & 0.023 & 0.485 & 0.988 & 24{,}145（预测区域 99\% 是错的） \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\noindent\textbf{问题分析：}
+	\begin{itemize}
+		\item FNR = 0.432（主因）：liver\_4、liver\_71 为超大肿瘤，模型只能找到约 $\frac{1}{3}$；
+		\item FDR = 0.292（次因）：liver\_15、liver\_77、liver\_107 存在严重误报。
+	\end{itemize}
+
+	\noindent\textbf{Eval + TTA 结果（test split，13 cases）：}
+
+	\noindent TTA 对 D/H/W 三轴 8 种翻转取平均，Stage2 推理时间约 0.633h（无 TTA 为 0.198h）。
+
+	\begin{table}[H]
+		\centering
+		\caption{实验二 Eval + TTA 汇总（test split，13 cases）}
+		\begin{tabular}{lccc}
+			\hline
+			\textbf{指标} & \textbf{无 TTA} & \textbf{TTA} & \textbf{$\Delta$} \\
+			\hline
+			liver Dice      & 0.9594 & 0.9594          & = \\
+			tumor Dice      & 0.5816 & \textbf{0.5965} & +0.015 \\
+			tumor Jaccard   & 0.3889 & 0.4001          & +0.011 \\
+			tumor Recall    & 0.4914 & 0.5224          & +0.031 \\
+			tumor FNR       & 0.4317 & 0.4007          & $-$0.031 \\
+			tumor FDR       & 0.2920 & 0.2890          & $\approx$ \\
+			tumor Precision & 0.6311 & 0.6341          & $\approx$ \\
+			\hline
+		\end{tabular}
+	\end{table}
+
+	\noindent\textbf{结论：} TTA 主要通过提升 Recall（+3.1\%）减少漏检（FNR$\downarrow$），FDR 基本不变。Tumor Dice $+1.5\%$，可保留为标配。
+
+	% ------------------------------------------------
+	\subsection{Eval-only：min\_tumor\_size 后处理扫参}
+
+	\noindent\textbf{说明：} 过滤掉体素数低于阈值的预测连通域，降低假阳性。
+	以实验二 best.pt + TTA 在 \textbf{val split（26 cases）} 上扫参。
+
+	\begin{table}[H]
+		\centering
+		\caption{min\_tumor\_size 扫参结果（val split，26 cases，实验二 ckpt + TTA）}
+		\begin{tabular}{lcccccc}
+			\hline
+			\textbf{min\_tumor\_size} & \textbf{Tumor Dice} & \textbf{Jaccard} & \textbf{Recall} & \textbf{Precision} & \textbf{FDR} & \textbf{FNR} \\
+			\hline
+			0（无过滤）  & 0.5377 & 0.3913 & 0.4315 & 0.7428 & 0.2188 & 0.4915 \\
+			\textbf{100} & \textbf{0.5757} & \textbf{0.3910} & 0.4310 & 0.7450 & \textbf{0.1011} & 0.4921 \\
+			200          & 0.5751 & 0.3905 & 0.4301 & 0.7068 & 0.1009 & 0.4930 \\
+			500          & 0.5463 & 0.3679 & 0.4063 & 0.6715 & 0.0977 & 0.5167 \\
+			1000         & 0.5079 & 0.3421 & 0.3777 & 0.6019 & 0.0904 & 0.5454 \\
+			\hline
+		\end{tabular}
+	\end{table}
+
+	\noindent\textbf{结论：}
+	\begin{itemize}
+		\item \textbf{最优：min\_tumor\_size=100}，Tumor Dice=0.5757（相比无过滤 +0.038）；
+		\item 0$\to$100：FDR 大幅下降（0.219$\to$0.101），Recall 几乎不变，说明过滤掉了大量小的假阳性连通域；
+		\item 100$\to$200+：过滤过激，开始漏检真实肿瘤，Recall/FNR 明显恶化；
+		\item \textbf{后续实验建议固定 \texttt{--min\_tumor\_size 100}}。
+	\end{itemize}
+
+	% ------------------------------------------------
+	\subsection{Stage 2 实验三 —— 困难样本 Fine-tune（失败）}
+
+	\noindent\textbf{目录：} \texttt{twostage/tumor\_dynunet\_hardfinetune/train/03-24-17-09-06}
+
+	\begin{table}[H]
+		\centering
+		\caption{实验三训练配置}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{项目} & \textbf{值} \\
+			\hline
+			init\_ckpt           & 实验二 best.pt（\texttt{03-22-11-44-00}） \\
+			Optimizer            & AdamW, lr=$3\times10^{-4}$（降低一个数量级） \\
+			LR Scheduler         & CosineAnnealingLR, $T_{\max}=60$ \\
+			Loss                 & DiceFocal \\
+			Patch                & $96\times96\times96$ \\
+			Epochs               & 60（目标） \\
+			batch\_size          & 2 \\
+			hard\_cases\_only    & $\surd$\quad 仅小肿瘤（$<5{,}000$ voxel）+ 无肿瘤 case \\
+			small\_tumor\_thresh & 5{,}000 voxels \\
+			normal\_case\_ratio  & 0.2（混入 20\% 普通样本防灾难遗忘） \\
+			bbox\_jitter         & $\surd$\quad max\_shift=8 \\
+			random\_margin       & $\surd$\quad [8, 20] \\
+			目标                 & 降低 FNR（当前 0.432），提升 Recall \\
+			\hline
+			\textbf{状态} & \textbf{⚠ 15/60 epoch 中断（原因不明），实验失败} \\
+			\textbf{best val tumor Dice} & \textbf{0.4603}（epoch 10，未超过实验二 0.4697） \\
+			\hline
+		\end{tabular}
+	\end{table}
+
+	% ------------------------------------------------
+	\subsection{Stage 2 实验四 —— 预测 bbox 域对齐（训练中）}
+
+	\noindent\textbf{目录：} \texttt{twostage/tumor\_dynunet\_predbbox\_roi/train/\ldots}
+
+	\noindent\textbf{核心动机：} 实验一/二训练时使用 GT bbox 裁肝脏 ROI，但推理时使用 Stage1 预测
+	bbox，导致训练/推理分布不一致（domain gap）。本实验在训练阶段直接调用 Stage1 模型推理 bbox，
+	消除该偏差。
+
+	\begin{table}[H]
+		\centering
+		\caption{实验四训练配置}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{项目} & \textbf{值} \\
+			\hline
+			init\_ckpt           & 实验二 best.pt（\texttt{03-22-11-44-00}） \\
+			Optimizer            & AdamW, lr=$3\times10^{-3}$ \\
+			LR Scheduler         & CosineAnnealingLR, $T_{\max}=300$ \\
+			Loss                 & DiceFocal \\
+			Patch                & $96\times96\times96$，batch\_size=2 \\
+			Epochs               & 300 \\
+			use\_pred\_bbox      & $\surd$\quad 训练时用 Stage1 预测 bbox（消除 domain gap） \\
+			stage1\_ckpt         & \texttt{dynunet\_liver\_only/train/03-14-01-11-56/best.pt} \\
+			random\_margin       & $\surd$\quad [8, 24] \\
+			small\_tumor\_thresh & 500 voxels，oversample $\times$4 \\
+			no\_tumor\_repeat\_scale & 2 \\
+			目标                 & 训练/推理 bbox 一致，提升 test Dice \\
+			\hline
+			\textbf{状态} & \textbf{训练中} \\
+			\textbf{结果} & 待测 \\
+			\hline
+		\end{tabular}
+	\end{table}
+
+	% ------------------------------------------------
+	\subsection{横向对比}
+	
+	\begin{table}[H]
+		\centering
+		\caption{各实验横向对比。注：Val Dice 为训练时滑窗验证，Test Dice 为完整两阶段推理，两者不直接可比。}
+		\begin{tabular}{llcc}
+			\hline
+			\textbf{实验} & \textbf{核心改动} & \textbf{Val tumor Dice} & \textbf{Test tumor Dice} \\
+			\hline
+			实验一 & 基础版，仅 82 阳性 case                                   & 0.3801          & 0.5677 \\
+			实验二 & +全 92 case，+bbox\_jitter，+random\_margin      & \textbf{0.4697} & 0.5816 \\
+			实验三（hardfinetune） & fine-tune 困难样本，15/60 epoch 中断     & 0.4603 ❌       & 未测 \\
+			实验四（predbbox\_roi）& 训练时用 Stage1 预测 bbox，消除 domain gap & 训练中          & 待测 \\
+			\hline
+			eval-only: +TTA        & 实验二 ckpt + 8 种翻转平均（test split）  & —               & \textbf{0.5965} ✓ 当前最优 \\
+			eval-only: min\_tumor\_size=100 & 实验二+TTA，过滤小假阳性（val split）  & 0.5757(val)     & 待测 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\subsection{Eval 脚本说明}
+	
+	\begin{itemize}
+		\item \textbf{修复前：} eval 输出目录以 eval 执行时间命名，难以与训练 run 对应；
+		\item \textbf{修复后：} 输出目录名取自 \texttt{stage2\_ckpt} 的父目录名，与训练 run 一一对应。
+	\end{itemize}
+	
+	\noindent\textbf{示例：} \verb|--stage2_ckpt .../train/03-22-11-44-00/best.pt|
+	$\;\Rightarrow\;$ 输出到 \texttt{.../eval/03-22-11-44-00/}
+	
+	% ================================================================
+	\section{nnUNet 基准实验结果}
+	% ================================================================
+	
+	\begin{table}[H]
+		\centering
+		\caption{nnUNet 在 MSD Task003 上的分割性能（test split）}
+		\begin{tabular}{lcccccc}
+			\hline
+			\textbf{类别} & \textbf{Dice (\%)} & \textbf{Jaccard (\%)} & \textbf{Precision (\%)} & \textbf{Recall (\%)} & \textbf{FNR (\%)} & \textbf{Accuracy (\%)} \\
+			\hline
+			肝脏（Class 1）  & 96.52 & 93.30 & 97.06 & 96.05 & 3.95  & 99.81 \\
+			肿瘤（Class 2）  & 75.69 & 64.44 & 87.97 & 71.33 & 28.67 & 99.95 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\caption{nnUNet 详细评估指标}
+		\begin{tabular}{lcc}
+			\hline
+			\textbf{指标} & \textbf{肝脏} & \textbf{肿瘤} \\
+			\hline
+			Dice 系数             & 0.9652   & 0.7569   \\
+			Jaccard 系数          & 0.9330   & 0.6444   \\
+			准确率（Accuracy）    & 0.9981   & 0.9995   \\
+			精确率（Precision）   & 0.9706   & 0.8797   \\
+			召回率（Recall）      & 0.9605   & 0.7133   \\
+			真阴性率（TNR）       & 0.9990   & 0.9999   \\
+			假阳性率（FPR）       & 0.00098  & 0.00010  \\
+			假阴性率（FNR）       & 0.0395   & 0.2867   \\
+			假发现率（FDR）       & 0.0294   & 0.1203   \\
+			假遗漏率（FOR）       & 0.0010   & 0.0004   \\
+			阴性预测值（NPV）     & 0.9990   & 0.9996   \\
+			参考阳性像素数        & 2{,}604{,}527 & 144{,}668 \\
+			预测阳性像素数        & 2{,}592{,}826 & 140{,}237 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\caption{nnUNet 实验配置}
+		\begin{tabular}{ll}
+			\hline
+			\textbf{配置项} & \textbf{值} \\
+			\hline
+			\multicolumn{2}{l}{\textbf{模型配置}} \\
+			框架版本        & nnUNet v1 \\
+			训练器          & nnUNetTrainerV2 \\
+			计划版本        & nnUNetPlansv2.1 \\
+			网络架构        & 3D U-Net（full resolution） \\
+			数据集          & MSD Task003\_Liver \\
+			交叉验证折数    & fold\_0 \\
+			\hline
+			\multicolumn{2}{l}{\textbf{推理配置}} \\
+			滑动窗口推理    & 启用 \\
+			窗口步长        & 0.5（50\% 重叠） \\
+			高斯加权融合    & 启用 \\
+			测试时数据增强（TTA） & 启用（镜像） \\
+			后处理          & 启用 \\
+			\hline
+			\multicolumn{2}{l}{\textbf{输出配置}} \\
+			最佳模型        & \texttt{model\_best.model} \\
+			最终检查点      & \texttt{model\_final\_checkpoint.model} \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	% ================================================================
+	\section{改进方向}
+	% ================================================================
+	
+	\begin{enumerate}
+		\item \textbf{提升 Recall（降低 FNR）：} 当前 FNR=0.432，主要由超大肿瘤漏检导致。
+		可尝试加大 patch 尺寸或多尺度推理；
+		
+		\item \textbf{抑制误报（降低 FDR）：} 推理后处理——仅在 liver ROI 的轻微膨胀范围内允许
+		tumor，并去除小连通域（如 $<200$ voxel）；
+		
+		\item \textbf{单独优化 tumor 阈值：} softmax 下 tumor 概率往往偏飘，在 val 上做
+		threshold sweep（0.2–0.8）寻找最优点；
+		
+		\item \textbf{损失函数升级：} DiceFocal $\rightarrow$ Focal Tversky，
+		可单独加大 FP 惩罚权重，对小病灶+FP 多的场景有效；
+		
+		\item \textbf{模型升级：} DynUNet $\rightarrow$ SwinUNETR / SegResNet；
+		
+		\item \textbf{评估更合理：} tumor Dice 应同时报告全集平均与 GT 有肿瘤子集平均两种口径。
+	\end{enumerate}
+	
+	
+	
+	% 表格一
+	\begin{table}[H]
+		\centering
+		\caption{各方法在测试集上的 Tumor Dice 对比}
+		\begin{tabular}{lc}
+			\hline
+			\textbf{方法} & \textbf{Tumor Dice (test set)} \\
+			\hline
+			nnUNet (baseline目标)            & \textbf{0.7569} \\
+			tumor\_dynunet（第一个完整实验）  & 0.5401 \\
+			tumor\_dynunet\_roi\_jitter（最好）& \textbf{0.5816} \\
+			tumor\_dynunet\_balanced         & 0.5802 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	% 表格二
+	\begin{table}[H]
+		\centering
+		\caption{完整对比实验表}
+		\begin{tabular}{lc}
+			\hline
+			\textbf{方法} & \textbf{Tumor Dice} \\
+			\hline
+			nnUNet (baseline)              & 0.7569 \\
+			单阶段 DynUNet（无 two-stage） & ?      \\
+			Two-stage（你的）              & ?      \\
+			Two-stage + 改进A              & ?      \\
+			Two-stage + 改进A + 改进B      & ?      \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	
+	\begin{table}[H]
+		\centering
+		\caption{方法对比}
+		\begin{tabular}{lcc}
+			\hline
+			\textbf{方法} & \textbf{Tumor Dice} & \textbf{说明} \\
+			\hline
+			nnUNet cascade (baseline)  & 0.7569              & 你要超越的目标 \\
+			DynUNet 单阶段全图（缺这个！）& ???              & 证明 two-stage 有没有用 \\
+			你的 two-stage（当前最好）  & \underline{0.5816}  & 方法基础版本 \\
+			+ 加粗分割先验通道          & ???                 & 借鉴 nnUNet 的关键改进 \\
+			+ 其他你加的改进            & ???                 & 消融 \\
+			\hline
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\caption{改进方案优先级评估（更新至 2026-03-27）}
+		\label{tab:improvement-plan}
+		\renewcommand{\arraystretch}{1.3}
+		\begin{tabular}{clccc}
+			\toprule
+			\textbf{优先级} & \textbf{方案} & \textbf{预期收益} & \textbf{工程成本} & \textbf{状态} \\
+			\midrule
+			① & 训练时预测 bbox（域对齐） & 高   & 低   & ✓ 实验四训练中 \\
+			② & 测试时增强（TTA）         & 中高 & 极低 & ✓ 已完成，+0.015 \\
+			③ & min\_tumor\_size 后处理    & 中   & 极低 & ✓ 已完成，最优=100 \\
+			④ & 两通道融合（nnUNet cascade 风格） & 中高 & 中 & 待做 \\
+			⑤ & Hard case mining（针对小肿瘤） & 中 & 中 & 待做（实验三失败，需重新设计） \\
+			⑥ & Swin-UNETR / SegResNet 骨干替换 & 不确定 & 高 & 待做 \\
+			⑦ & Focal Tversky Loss         & 中   & 低   & 待做 \\
+			⑧ & Boundary Loss / 联合训练  & 中高 & 高   & 长期 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+
+	\noindent\textbf{当前进度（2026-03-27）：}①②③ 均已完成，当前最优 test Dice = \textbf{0.5965}（实验二 + TTA）。
+	实验四（预测 bbox 域对齐）训练中，完成后优先评测，再推进④两通道融合。
+
+\end{document}

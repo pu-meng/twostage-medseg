@@ -69,6 +69,11 @@ def parse_args():
     p.add_argument("--exp_name", type=str, default="tumor_roi_dynunet")
     p.add_argument("--model", type=str, default="dynunet")
     p.add_argument("--epochs", type=int, default=200)
+    p.add_argument("--total_steps", type=int, default=None,
+                   help="指定总梯度步数。传入后自动覆盖 --epochs，"
+                        "epochs = ceil(total_steps / steps_per_epoch)，"
+                        "steps_per_epoch = len(train_dataset) // batch_size。"
+                        "用于跨实验对齐训练量（不同 repeats/scale 时步数/epoch 不同）。")
     p.add_argument("--batch_size", type=int, default=1)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--val_ratio", type=float, default=0.2)
@@ -76,7 +81,10 @@ def parse_args():
     p.add_argument("--patch", type=int, nargs=3, default=[96, 96, 96])
     p.add_argument("--val_patch", type=int, nargs=3, default=[96, 96, 96])
     p.add_argument("--sw_batch_size", type=int, default=1,help="只在验证时候用,训练不用")
-    p.add_argument("--overlap", type=float, default=0.5,help="只在验证用overlap,")
+    p.add_argument("--val_overlap", type=float, default=0.0,
+                   help="验证时 sliding window 的 overlap，0=无重叠最快，0.25/0.5 更精确但慢")
+    p.add_argument("--bbox_overlap", type=float, default=0.25,
+                   help="build_pred_bboxes 时 Stage1 推理的 overlap，仅 --use_pred_bbox 时生效")
     p.add_argument("--num_workers", type=int, default=2)
 
     p.add_argument("--prefetch_factor", type=int, default=4,help="表示每个worker提前预加载的batch数量,只在num_workers>0时有效;会占用CPU内存,不影响GPU的显存")
@@ -191,7 +199,7 @@ def build_pred_bboxes(stage1_ckpt, pt_paths, device, stage1_model, stage1_patch,
     用 Stage1 肝脏模型对训练集推理，返回每个 case 的预测 tight bbox（margin=0）字典。
 
     返回格式: {case_name: (z0, z1, y0, y1, x0, x1)}
-    tight bbox 不含 margin，margin 在 TumorROIDataset.__getitem__ 中动态叠加，
+    tight bbox 不含 margin,margin 在 TumorROIDataset.__getitem__ 中动态叠加，
     这样 random_margin 仍然生效，模拟推理时不同 margin 的尺度变化。
 
     cache_path: JSON 缓存路径。
@@ -372,7 +380,7 @@ def main():
             device=_device_bbox,
             stage1_model=args.stage1_model,
             stage1_patch=args.stage1_patch,
-            overlap=args.overlap,
+            overlap=args.bbox_overlap,
             cache_path=args.pred_bbox_cache,
         )
 
@@ -411,10 +419,12 @@ def main():
         "patch": list(args.patch),
         "val_patch": list(args.val_patch),
         "sw_batch_size": int(args.sw_batch_size),
-        "overlap": float(args.overlap),
+        "val_overlap": float(args.val_overlap),
+        "bbox_overlap": float(args.bbox_overlap),
         "num_workers": int(args.num_workers),
         "prefetch_factor": int(args.prefetch_factor),
         "repeats": int(args.repeats),
+        "total_steps": args.total_steps,           # None 表示未指定，按 epochs 走
         "amp": bool(args.amp),
         "loss": args.loss,
         "val_every": int(args.val_every),
@@ -486,6 +496,19 @@ def main():
         no_tumor_repeat_scale=args.no_tumor_repeat_scale,
         pred_bboxes=pred_bboxes_train,  # None 时行为与之前完全一致
     )
+
+    # --total_steps：自动反推 epochs，对齐不同 repeats/scale 实验的训练量
+    steps_per_epoch = max(1, len(train_ds) // args.batch_size)
+    if args.total_steps is not None:
+        import math
+        args.epochs = math.ceil(args.total_steps / steps_per_epoch)
+        print(f"[total_steps] total_steps={args.total_steps}, "
+              f"steps_per_epoch={steps_per_epoch}, "
+              f"=> epochs={args.epochs}")
+    # 回写 config（epochs 可能被 total_steps 覆盖，steps_per_epoch 需要 dataset 才能算）
+    config["epochs"] = int(args.epochs)
+    config["steps_per_epoch"] = steps_per_epoch
+    config["T_max"] = int(args.epochs)
 
     val_ds = TumorROIDataset(
         va,
@@ -621,7 +644,7 @@ def main():
                 roi_size=tuple(args.val_patch),
                 sw_batch_size=args.sw_batch_size,
                 num_classes=2,
-                overlap=args.overlap,
+                overlap=args.val_overlap,
                 return_per_class=True,
             )
             metrics = tumor_metrics_from_val_result(val_result)

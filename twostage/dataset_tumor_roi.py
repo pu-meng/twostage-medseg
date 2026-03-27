@@ -107,9 +107,9 @@ class TumorROIDataset(Dataset):
 
         - 未开启 hard mining（small_tumor_thresh==0 或倍率均为 1）：
           直接将 [0..N-1] 重复 repeats 次，所有 case 等频采样。
-        - 开启 hard mining：
+        - 开启 hard mining:
           预扫描所有 case 的肿瘤体素数，按大小分三类分别设置 repeat 倍率，
-          困难 case（小肿瘤/无肿瘤）在列表中出现更多次，从而被更频繁采到。
+          困难 case(小肿瘤/无肿瘤）在列表中出现更多次，从而被更频繁采到。
         """
         use_hard_mining = self.small_tumor_thresh > 0 and (
             self.small_tumor_repeat_scale > 1 or self.no_tumor_repeat_scale > 1
@@ -245,75 +245,92 @@ class TumorROIDataset(Dataset):
                 f"expect single-channel image/label, got image={tuple(image.shape)} label={tuple(label.shape)}"
             )
 
-        # ── Step 3-5: 获取 liver ROI bbox ────────────────────────────────────
-        case_name = Path(pt_path).stem
-        cur_margin = self._sample_margin()
-
-        if "crop_bbox" in data:
-            # ── 预裁剪 ROI 模式（Task03_Liver_roi 小文件）────────────────────
-            # 文件已经是肝脏 ROI crop（tight_bbox + margin_extra），
-            # tight_bbox 在 ROI 坐标系内的位置 = tight_bbox_orig - crop_bbox_orig
-            # random_margin 在 ROI 内部抖动：从 tight bbox 边界向内缩，保持 cur_margin 宽度
-            crop_bbox = data["crop_bbox"]   # [z0,z1,y0,y1,x0,x1] 在原 volume 中
-            tight_bbox = data["tight_bbox"] # [z0,z1,y0,y1,x0,x1] 无 margin
-            cz0, _, cy0, _, cx0, _ = crop_bbox[0], crop_bbox[1], crop_bbox[2], crop_bbox[3], crop_bbox[4], crop_bbox[5]
-            tz0, tz1, ty0, ty1, tx0, tx1 = tight_bbox
-            D, H, W = image.shape[1], image.shape[2], image.shape[3]
-            # tight bbox 在 ROI 坐标系内的位置
-            rz0 = tz0 - cz0
-            rz1 = tz1 - cz0
-            ry0 = ty0 - cy0
-            ry1 = ty1 - cy0
-            rx0 = tx0 - cx0
-            rx1 = tx1 - cx0
-            # 在 ROI 内部应用 random margin，clamped 到 ROI 边界
-            bbox = (
-                max(0, rz0 - cur_margin), min(D, rz1 + cur_margin),
-                max(0, ry0 - cur_margin), min(H, ry1 + cur_margin),
-                max(0, rx0 - cur_margin), min(W, rx1 + cur_margin),
-            )
-            image_roi = crop_3d(image, bbox)
-            label_roi = crop_3d(label, bbox)
-        elif self.pred_bboxes is not None and case_name in self.pred_bboxes:
-            # ── 预测 bbox 模式（原始大文件 + pred_bbox cache）────────────────
-            z0, z1, y0, y1, x0, x1 = self.pred_bboxes[case_name]
-            D, H, W = image.shape[1], image.shape[2], image.shape[3]
-            bbox = (
-                max(0, z0 - cur_margin), min(D, z1 + cur_margin),
-                max(0, y0 - cur_margin), min(H, y1 + cur_margin),
-                max(0, x0 - cur_margin), min(W, x1 + cur_margin),
-            )
-            image_roi = crop_3d(image, bbox)
-            label_roi = crop_3d(label, bbox)
-        else:
-            # ── GT bbox 模式（原始大文件，无 pred_bbox）──────────────────────
-            liver_mask = label[0] > 0
-            liver_mask = filter_largest_component(liver_mask)
-            bbox = compute_bbox_from_mask(liver_mask, margin=cur_margin)
-            bbox = self._jitter_bbox(bbox, spatial_shape=tuple(label.shape[1:]))
-            image_roi = crop_3d(image, bbox)
-            label_roi = crop_3d(label, bbox)
-
-        # ── Step 7: label 重映射为肿瘤二分类 ─────────────────────────────────
-        # Stage 2 只做肿瘤检测：tumor(2)→1，liver(1) 和 bg(0) 统一→0
-        tumor_roi = (label_roi == 2).long()   # [1, d, h, w]，值域 {0, 1}
-
-        # ── Step 8: 组装输出 dict ─────────────────────────────────────────────
+        # ════════════════════════════════════════════════════════════════════
+        # ⚡ FAST PATH（当前启用）
+        #
+        # load → label remap → transform，和 OfflineDataset 完全一样的结构。
+        # transform 里的 RandCropByLabelClassesd 负责找 tumor 位置并采 patch，
+        # 在 MONAI C 扩展里运行，Python 层零额外开销。
+        #
+        # 为什么不在这里先 crop 到 tumor bbox 再 transform？
+        #   → crop_3d 每次 __getitem__ 都要 new 一个完整 ROI tensor（~22M 体素）
+        #     内存分配 + 数据拷贝，4 个 worker 并发时带宽竞争，实测 per-iter
+        #     从 1.5 sec 劣化到 8-17 sec，整整 5-11x 慢，而指标并无提升。
+        #   → 文件从 1.1G 压到 186MB 省下来的 IO，被这两次 tensor copy 全吃掉了。
+        # ════════════════════════════════════════════════════════════════════
+        data["label"] = (data["label"] == 2).long()   # tumor→1, liver/bg→0
         out: dict[str, Any] = {
-            "image": image_roi.float(),
-            "label": tumor_roi.long(),
+            "image": data["image"].float(),
+            "label": data["label"],
         }
 
-        # 可选：附带调试元信息，方便训练日志和可视化溯源
-        if self.keep_meta:
-            out["case_name"] = Path(pt_path).stem       # 文件名（不含扩展名）
-            out["bbox"] = bbox_to_dict(bbox)             # ROI 坐标，可序列化
-            out["source_pt"] = pt_path                   # 原始文件路径
-            out["roi_shape"] = list(image_roi.shape)     # 裁后形状
-            out["margin"] = int(cur_margin)              # 本次实际使用的 margin
+        # ════════════════════════════════════════════════════════════════════
+        # ⚠️  SLOW PATH（已注释，勿删）
+        #
+        # 下面这段代码尝试在 __getitem__ 里先把 ROI 裁到 tumor tight bbox，
+        # 再交给 transform 采 patch。设计意图：
+        #   1. crop_bbox 模式：文件已是 liver ROI，再按 tight bbox+margin 二次裁剪
+        #   2. pred_bboxes 模式：用 Stage1 预测框代替 GT bbox，消除 train/infer gap
+        #   3. GT bbox 模式：计算 liver mask → compute_bbox → jitter
+        #
+        # 为什么注释掉：
+        #   crop_3d(image, bbox) + crop_3d(label, bbox) 各产生一次完整 tensor copy，
+        #   加上 (label_roi==2).long() 又一次，每个 __getitem__ 共三次大内存分配。
+        #   测量结果：per-iter 从 1.5s → 8-17s，每轮多消耗 10-12 分钟，
+        #   同时因为 repeats 从 6 降到 1，total steps 少 6x，导致指标大幅下降。
+        #   如果未来要复活这段逻辑，必须同步把 repeats 调回 ≥6，
+        #   或者改用 in-place crop（避免 copy）再评估速度。
+        # ════════════════════════════════════════════════════════════════════
+        # case_name = Path(pt_path).stem
+        # cur_margin = self._sample_margin()
+        #
+        # if "crop_bbox" in data:
+        #     crop_bbox = data["crop_bbox"]
+        #     tight_bbox = data["tight_bbox"]
+        #     cz0, _, cy0, _, cx0, _ = crop_bbox[0], crop_bbox[1], crop_bbox[2], crop_bbox[3], crop_bbox[4], crop_bbox[5]
+        #     tz0, tz1, ty0, ty1, tx0, tx1 = tight_bbox
+        #     D, H, W = image.shape[1], image.shape[2], image.shape[3]
+        #     rz0, rz1 = tz0 - cz0, tz1 - cz0
+        #     ry0, ry1 = ty0 - cy0, ty1 - cy0
+        #     rx0, rx1 = tx0 - cx0, tx1 - cx0
+        #     bbox = (
+        #         max(0, rz0 - cur_margin), min(D, rz1 + cur_margin),
+        #         max(0, ry0 - cur_margin), min(H, ry1 + cur_margin),
+        #         max(0, rx0 - cur_margin), min(W, rx1 + cur_margin),
+        #     )
+        #     image_roi = crop_3d(image, bbox)
+        #     label_roi = crop_3d(label, bbox)
+        # elif self.pred_bboxes is not None and case_name in self.pred_bboxes:
+        #     z0, z1, y0, y1, x0, x1 = self.pred_bboxes[case_name]
+        #     D, H, W = image.shape[1], image.shape[2], image.shape[3]
+        #     bbox = (
+        #         max(0, z0 - cur_margin), min(D, z1 + cur_margin),
+        #         max(0, y0 - cur_margin), min(H, y1 + cur_margin),
+        #         max(0, x0 - cur_margin), min(W, x1 + cur_margin),
+        #     )
+        #     image_roi = crop_3d(image, bbox)
+        #     label_roi = crop_3d(label, bbox)
+        # else:
+        #     liver_mask = label[0] > 0
+        #     liver_mask = filter_largest_component(liver_mask)
+        #     bbox = compute_bbox_from_mask(liver_mask, margin=cur_margin)
+        #     bbox = self._jitter_bbox(bbox, spatial_shape=tuple(label.shape[1:]))
+        #     image_roi = crop_3d(image, bbox)
+        #     label_roi = crop_3d(label, bbox)
+        #
+        # tumor_roi = (label_roi == 2).long()
+        # out: dict[str, Any] = {
+        #     "image": image_roi.float(),
+        #     "label": tumor_roi.long(),
+        # }
+        # if self.keep_meta:
+        #     out["case_name"] = Path(pt_path).stem
+        #     out["bbox"] = bbox_to_dict(bbox)
+        #     out["source_pt"] = pt_path
+        #     out["roi_shape"] = list(image_roi.shape)
+        #     out["margin"] = int(cur_margin)
 
-        # ── Step 9: 执行 transform ────────────────────────────────────────────
-        # 通常包含随机 patch crop（RandCropByPosNegLabel）+ 空间/强度增强
+        # ── transform（patch crop + 数据增强）────────────────────────────────
         if self.transform is not None:
             out = self.transform(out)
 

@@ -63,8 +63,12 @@ def main():
     p.add_argument("--input_dir", required=True)
     p.add_argument("--output_dir", required=True)
     p.add_argument("--pred_bbox_cache", default=None, help="Stage1 pred bbox json")
-    p.add_argument("--margin_extra", type=int, default=30,
-                   help="tight bbox 外扩 voxels（应 >= 训练时 margin_max）")
+    p.add_argument(
+        "--margin_extra",
+        type=int,
+        default=30,
+        help="tight bbox 外扩 voxels(应 >= 训练时 margin_max)",
+    )
     args = p.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -90,7 +94,9 @@ def main():
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
-            data = torch.load(pt_path, map_location="cpu", weights_only=False, mmap=True)
+            data = torch.load(
+                pt_path, map_location="cpu", weights_only=False, mmap=True
+            )
 
         image = data["image"]  # [1, D, H, W]
         label = data["label"]  # [1, D, H, W]
@@ -111,8 +117,8 @@ def main():
         out_data = {
             "image": image_roi,
             "label": label_roi,
-            "crop_bbox": list(bbox),          # (z0,z1,y0,y1,x0,x1) 在原 volume 中的坐标
-            "tight_bbox": list(tight_bbox),   # 无 margin 的 tight bbox
+            "crop_bbox": list(bbox),  # (z0,z1,y0,y1,x0,x1) 在原 volume 中的坐标
+            "tight_bbox": list(tight_bbox),  # 无 margin 的 tight bbox
             "orig_shape": [D, H, W],
         }
         torch.save(out_data, out_path)
@@ -120,10 +126,10 @@ def main():
         size_before += pt_path.stat().st_size
         size_after += out_path.stat().st_size
 
-    print(f"\n完成！")
-    print(f"  原始: {size_before/1e9:.1f} GB")
-    print(f"  裁后: {size_after/1e9:.1f} GB")
-    print(f"  压缩比: {size_before/max(size_after,1):.1f}x")
+    print("\n完成")
+    print(f"  原始: {size_before / 1e9:.1f} GB")
+    print(f"  裁后: {size_after / 1e9:.1f} GB")
+    print(f"  压缩比: {size_before / max(size_after, 1):.1f}x")
     print(f"  输出目录: {output_dir}")
 
 

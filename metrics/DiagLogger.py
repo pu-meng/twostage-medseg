@@ -77,7 +77,7 @@ class DiagLogger:
         self._both(f"  tumor_ratios={args.tumor_ratios}  margin={args.margin}")
         self._both(f"  learnable_loss={args.learnable_loss}")
         self._both(f"  epochs={args.epochs}  val_every={args.val_every}")
-        self._both(f"  amp={args.amp}  overlap={args.overlap}")
+        self._both(f"  amp={args.amp}  val_overlap={args.val_overlap}")
         self._flush_summary()
 
     # ──────────────────────────────────────────
