@@ -46,7 +46,7 @@ curl -X PUT http://127.0.0.1:9090/proxies/AI \
 
 export HTTPS_PROXY=http://127.0.0.1:7890
 export HTTP_PROXY=http://127.0.0.1:7890
-ANTHROPIC_API_KEY=REDACTED_ANTHROPIC_API_KEY
+ANTHROPIC_API_KEY=your-api-key-here  # 不要在脚本中硬编码密钥，请使用环境变量或 ~/.claude 配置
 
 
 curl -I https://api.anthropic.com 2>&1 | grep cf-ray
