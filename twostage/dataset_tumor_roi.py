@@ -215,14 +215,10 @@ class TumorROIDataset(Dataset):
 
     def __getitem__(self, idx: int):
         # ── Step 1: 索引映射 ──────────────────────────────────────────────────
-        # _indices 是展开后的列表，hard mining 时同一 case 可能出现多次
-        # 将逻辑索引 idx 映射回真实 case 的文件路径
         case_idx = self._indices[idx]
         pt_path = self.pt_paths[case_idx]
 
         # ── Step 2: 加载 .pt 文件 ─────────────────────────────────────────────
-        # map_location="cpu"：Dataset 阶段在 CPU 处理，训练时再由 DataLoader 送到 GPU
-        # mmap=True：内存映射读取，操作系统按需加载文件内容，节省内存
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
             data = torch.load(
@@ -232,11 +228,8 @@ class TumorROIDataset(Dataset):
                 mmap=True,
             )
 
-        # 基本格式校验
         if not isinstance(data, dict):
-            raise TypeError(
-                f"expect dict from torch.load, got {type(data)} @ {pt_path}"
-            )
+            raise TypeError(f"expect dict from torch.load, got {type(data)} @ {pt_path}")
         if "image" not in data or "label" not in data:
             raise KeyError(f"pt sample missing image/label keys @ {pt_path}")
 
@@ -256,11 +249,33 @@ class TumorROIDataset(Dataset):
         case_name = Path(pt_path).stem
         cur_margin = self._sample_margin()
 
-        if self.pred_bboxes is not None and case_name in self.pred_bboxes:
-            # ── 预测 bbox 模式 ────────────────────────────────────────────────
-            # 直接用 Stage1 推理出的 tight bbox，与推理阶段完全对齐（无 domain gap）
-            # tight bbox 存储的是 Stage1 预测肝脏的紧致边界（margin=0），
-            # 这里在其基础上叠加 cur_margin，模拟推理时不同 margin 设置的尺度变化
+        if "crop_bbox" in data:
+            # ── 预裁剪 ROI 模式（Task03_Liver_roi 小文件）────────────────────
+            # 文件已经是肝脏 ROI crop（tight_bbox + margin_extra），
+            # tight_bbox 在 ROI 坐标系内的位置 = tight_bbox_orig - crop_bbox_orig
+            # random_margin 在 ROI 内部抖动：从 tight bbox 边界向内缩，保持 cur_margin 宽度
+            crop_bbox = data["crop_bbox"]   # [z0,z1,y0,y1,x0,x1] 在原 volume 中
+            tight_bbox = data["tight_bbox"] # [z0,z1,y0,y1,x0,x1] 无 margin
+            cz0, _, cy0, _, cx0, _ = crop_bbox[0], crop_bbox[1], crop_bbox[2], crop_bbox[3], crop_bbox[4], crop_bbox[5]
+            tz0, tz1, ty0, ty1, tx0, tx1 = tight_bbox
+            D, H, W = image.shape[1], image.shape[2], image.shape[3]
+            # tight bbox 在 ROI 坐标系内的位置
+            rz0 = tz0 - cz0
+            rz1 = tz1 - cz0
+            ry0 = ty0 - cy0
+            ry1 = ty1 - cy0
+            rx0 = tx0 - cx0
+            rx1 = tx1 - cx0
+            # 在 ROI 内部应用 random margin，clamped 到 ROI 边界
+            bbox = (
+                max(0, rz0 - cur_margin), min(D, rz1 + cur_margin),
+                max(0, ry0 - cur_margin), min(H, ry1 + cur_margin),
+                max(0, rx0 - cur_margin), min(W, rx1 + cur_margin),
+            )
+            image_roi = crop_3d(image, bbox)
+            label_roi = crop_3d(label, bbox)
+        elif self.pred_bboxes is not None and case_name in self.pred_bboxes:
+            # ── 预测 bbox 模式（原始大文件 + pred_bbox cache）────────────────
             z0, z1, y0, y1, x0, x1 = self.pred_bboxes[case_name]
             D, H, W = image.shape[1], image.shape[2], image.shape[3]
             bbox = (
@@ -268,18 +283,16 @@ class TumorROIDataset(Dataset):
                 max(0, y0 - cur_margin), min(H, y1 + cur_margin),
                 max(0, x0 - cur_margin), min(W, x1 + cur_margin),
             )
-            # 不做 jitter：预测 bbox 本身已经包含了 Stage1 的真实位置误差
+            image_roi = crop_3d(image, bbox)
+            label_roi = crop_3d(label, bbox)
         else:
-            # ── GT bbox 模式（原有逻辑）──────────────────────────────────────
-            # 从 GT label 构造肝脏 mask，计算 bbox，再施加随机扰动模拟 Stage1 误差
+            # ── GT bbox 模式（原始大文件，无 pred_bbox）──────────────────────
             liver_mask = label[0] > 0
             liver_mask = filter_largest_component(liver_mask)
             bbox = compute_bbox_from_mask(liver_mask, margin=cur_margin)
             bbox = self._jitter_bbox(bbox, spatial_shape=tuple(label.shape[1:]))
-
-        # ── Step 6: 裁剪 ROI ──────────────────────────────────────────────────
-        image_roi = crop_3d(image, bbox)   # [1, d, h, w]  裁后子体积
-        label_roi = crop_3d(label, bbox)   # [1, d, h, w]
+            image_roi = crop_3d(image, bbox)
+            label_roi = crop_3d(label, bbox)
 
         # ── Step 7: label 重映射为肿瘤二分类 ─────────────────────────────────
         # Stage 2 只做肿瘤检测：tumor(2)→1，liver(1) 和 bg(0) 统一→0

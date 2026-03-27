@@ -4,6 +4,7 @@
 # ============================================================
 MEDSEG=/home/pumengyu/medseg_project
 DATA=/home/pumengyu/Task03_Liver_pt
+DATA_ROI=/home/pumengyu/Task03_Liver_roi   # 预裁剪肝脏ROI小文件，4.5x压缩，加载快
 EXP=/home/pumengyu/experiments/twostage
 
 STAGE1_CKPT=/home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
@@ -86,6 +87,42 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --use_pred_bbox \
   --stage1_ckpt $STAGE1_CKPT \
   --stage1_patch 144 144 144 \
+  --random_margin --margin_min 8 --margin_max 24 \
+  --small_tumor_thresh 500 \
+  --small_tumor_repeat_scale 4 \
+  --no_tumor_repeat_scale 2 \
+  --init_ckpt $ROIJITTER_CKPT
+
+
+# ============================================================
+# exp3: tumor_dynunet_predbbox_roi (当前推荐实验)
+# 同 exp2 逻辑，但用预裁剪 ROI 小文件（130GB→30GB）
+# 解决 exp2 每 epoch 50min 磁盘IO瓶颈，恢复到 ~10min/epoch
+# __getitem__ 检测到 crop_bbox 字段自动走 ROI 快速路径
+# 去掉 --use_pred_bbox（pred_bbox 已内嵌在 ROI 文件里）
+# ============================================================
+
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root $MEDSEG \
+  --preprocessed_root $DATA_ROI \
+  --exp_root $EXP \
+  --exp_name tumor_dynunet_predbbox_roi \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 2 \
+  --lr 3e-3 \
+  --patch 96 96 96 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 2 \
+  --val_every 3 \
+  --num_workers 4 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss dicefocal \
+  --overlap 0.5 \
+  --repeats 6 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
   --random_margin --margin_min 8 --margin_max 24 \
   --small_tumor_thresh 500 \
   --small_tumor_repeat_scale 4 \
