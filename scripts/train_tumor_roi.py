@@ -212,6 +212,12 @@ def parse_args():
         help="大肿瘤 case 的 repeat 倍率",
     )
 
+    p.add_argument(
+        "--two_channel",
+        action="store_true",
+        help="启用两通道输入：Ch1=CT, Ch2=liver mask（训练时用 GT，推理时用 Stage1 预测）",
+    )
+
     # 预测 bbox 模式：用 Stage1 推理结果代替 GT bbox，消除训练/推理 domain gap
     p.add_argument(
         "--use_pred_bbox",
@@ -506,8 +512,9 @@ def main():
         "optimizer": "AdamW",
         "scheduler": "CosineAnnealingLR",
         "T_max": int(args.epochs),
-        "in_channels": 1,
+        "in_channels": 2 if args.two_channel else 1,
         "out_channels": 2,
+        "two_channel": bool(args.two_channel),
         "resume": args.resume,
         "learnable_loss": bool(args.learnable_loss),
         "bbox_jitter": bool(args.bbox_jitter),
@@ -565,6 +572,7 @@ def main():
         large_tumor_thresh=args.large_tumor_thresh,
         large_tumor_repeat_scale=args.large_tumor_repeat_scale,
         pred_bboxes=pred_bboxes_train,  # None 时行为与之前完全一致
+        two_channel=args.two_channel,
     )
 
     # --total_steps：自动反推 epochs，对齐不同 repeats/scale 实验的训练量
@@ -629,8 +637,9 @@ def main():
         )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    in_channels = 2 if args.two_channel else 1
     model = build_model(
-        args.model, in_channels=1, out_channels=2, img_size=tuple(args.patch)
+        args.model, in_channels=in_channels, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
 
     torch._dynamo.config.suppress_errors = True  # 保险:编译失败不崩溃

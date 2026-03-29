@@ -64,6 +64,8 @@ class TumorROIDataset(Dataset):
         pred_bboxes: dict | None = None,    # Stage1 预测 tight bbox 字典 {case_name: (z0,z1,y0,y1,x0,x1)}
                                             # 传入时用预测 bbox 代替 GT bbox，消除训练/推理 domain gap
                                             # None 则保持原有 GT bbox + jitter 行为
+        two_channel: bool = False,          # 是否启用两通道输入（Ch1=CT, Ch2=GT liver mask）
+                                            # 训练时用 GT liver mask 作第二通道，推理时换成 Stage1 预测
     ) -> None:
         self.pt_paths = [str(p) for p in pt_paths]
         self.transform = transform
@@ -81,6 +83,7 @@ class TumorROIDataset(Dataset):
         self.large_tumor_thresh = int(large_tumor_thresh)
         self.large_tumor_repeat_scale = int(large_tumor_repeat_scale)
         self.pred_bboxes = pred_bboxes  # {case_name: (z0,z1,y0,y1,x0,x1)} tight bbox，无 margin
+        self.two_channel = bool(two_channel)
 
         # 基本合法性校验
         if len(self.pt_paths) == 0:
@@ -290,8 +293,16 @@ class TumorROIDataset(Dataset):
             label_roi = crop_3d(label, bbox)
 
         tumor_roi = (label_roi == 2).long()
+
+        if self.two_channel:
+            # Ch1: CT，Ch2: GT liver mask（训练时用 GT，推理时由 eval 脚本替换为 Stage1 预测）
+            liver_roi = (label_roi > 0).float()   # [1, d, h, w]  0/1
+            image_2ch = torch.cat([image_roi.float(), liver_roi], dim=0)  # [2, d, h, w]
+        else:
+            image_2ch = image_roi.float()
+
         out: dict[str, Any] = {
-            "image": image_roi.float(),
+            "image": image_2ch,
             "label": tumor_roi.long(),
         }
         if self.keep_meta:

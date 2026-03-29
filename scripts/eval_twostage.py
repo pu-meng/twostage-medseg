@@ -74,6 +74,8 @@ def parse_args():
                    help="测试时增强：对D/H/W三轴所有翻转组合推理后取平均（8次推理，更稳定但更慢）")
     p.add_argument("--tta_stage1", action="store_true",
                    help="仅对Stage1也做TTA（默认TTA只加在Stage2上）")
+    p.add_argument("--two_channel", action="store_true",
+                   help="Stage2 使用两通道输入（Ch1=CT, Ch2=Stage1预测liver_mask），需与训练时一致")
     return p.parse_args()
 
 
@@ -294,9 +296,10 @@ def main():
         img_size=tuple(args.stage1_patch),
     ).to(device)
 
+    stage2_in_channels = 2 if args.two_channel else 1
     stage2 = build_model(
         args.stage2_model,
-        in_channels=1,
+        in_channels=stage2_in_channels,
         out_channels=2,
         img_size=tuple(args.stage2_patch),
     ).to(device)
@@ -308,7 +311,7 @@ def main():
     if args.stage2_ckpt_b is not None:#推理时将两个独立的训练的stage 2的预测概率按照权重加权平均
         stage2_b = build_model(
             args.stage2_model,
-            in_channels=1,
+            in_channels=stage2_in_channels,
             out_channels=2,
             img_size=tuple(args.stage2_patch),
         ).to(device)
@@ -400,7 +403,14 @@ def main():
 
                 # 把 CT 裁剪到肝脏 ROI 区域，大幅缩小 Stage2 的输入尺寸
                 image_roi = crop_3d(image, bbox)       # [1,D,H,W] → [1,d,h,w]（d≤D, h≤H, w≤W）
-                x_roi = image_roi.unsqueeze(0).to(device)  # [1,d,h,w] → [1,1,d,h,w]，加 batch 维
+
+                if args.two_channel:
+                    # 第二通道：Stage1 预测 liver_mask 裁到同一 bbox
+                    liver_roi = crop_3d(liver_mask.float().unsqueeze(0), bbox)  # [1,d,h,w]
+                    image_roi_2ch = torch.cat([image_roi, liver_roi], dim=0)    # [2,d,h,w]
+                    x_roi = image_roi_2ch.unsqueeze(0).to(device)  # [1,2,d,h,w]
+                else:
+                    x_roi = image_roi.unsqueeze(0).to(device)  # [1,1,d,h,w]，加 batch 维
 
                 with torch.autocast(
                     device_type="cuda",
