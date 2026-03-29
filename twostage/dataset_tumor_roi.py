@@ -36,11 +36,12 @@ class TumorROIDataset(Dataset):
 
     差异化 oversampling（hard case mining）：
         通过 __init__ 时预扫描每个 case 的肿瘤体素数，
-        让困难样本在 _indices 中出现更多次，DataLoader 每 epoch
-        更频繁地采到它们，从而改善小肿瘤/无肿瘤的分割效果：
-        - 无肿瘤 case  (voxels == 0)              : repeat × no_tumor_repeat_scale
-        - 小肿瘤 case  (0 < voxels < thresh)       : repeat × small_tumor_repeat_scale
-        - 正常   case  (voxels >= thresh)           : repeat × 1
+        让目标样本在 _indices 中出现更多次，DataLoader 每 epoch
+        更频繁地采到它们：
+        - 无肿瘤 case  (voxels == 0)                          : repeat × no_tumor_repeat_scale
+        - 小肿瘤 case  (0 < voxels < small_tumor_thresh)      : repeat × small_tumor_repeat_scale
+        - 大肿瘤 case  (voxels >= large_tumor_thresh > 0)     : repeat × large_tumor_repeat_scale
+        - 正常   case  (其余)                                 : repeat × 1
     """
 
     def __init__(
@@ -55,9 +56,11 @@ class TumorROIDataset(Dataset):
         random_margin: bool = False,   # 是否随机采样 margin（模拟 ROI 尺度波动）
         margin_min: int = 8,           # random_margin 时的最小 margin
         margin_max: int = 20,          # random_margin 时的最大 margin
-        small_tumor_thresh: int = 0,   # 小肿瘤判定阈值（体素数），0 表示关闭 hard mining
+        small_tumor_thresh: int = 0,   # 小肿瘤判定阈值（体素数），0 表示关闭小肿瘤 hard mining
         small_tumor_repeat_scale: int = 1,  # 小肿瘤 case 的 repeat 倍率
         no_tumor_repeat_scale: int = 1,     # 无肿瘤 case 的 repeat 倍率
+        large_tumor_thresh: int = 0,        # 大肿瘤判定阈值（体素数），0 表示关闭大肿瘤过采样
+        large_tumor_repeat_scale: int = 1,  # 大肿瘤 case 的 repeat 倍率
         pred_bboxes: dict | None = None,    # Stage1 预测 tight bbox 字典 {case_name: (z0,z1,y0,y1,x0,x1)}
                                             # 传入时用预测 bbox 代替 GT bbox，消除训练/推理 domain gap
                                             # None 则保持原有 GT bbox + jitter 行为
@@ -75,6 +78,8 @@ class TumorROIDataset(Dataset):
         self.small_tumor_thresh = int(small_tumor_thresh)
         self.small_tumor_repeat_scale = int(small_tumor_repeat_scale)
         self.no_tumor_repeat_scale = int(no_tumor_repeat_scale)
+        self.large_tumor_thresh = int(large_tumor_thresh)
+        self.large_tumor_repeat_scale = int(large_tumor_repeat_scale)
         self.pred_bboxes = pred_bboxes  # {case_name: (z0,z1,y0,y1,x0,x1)} tight bbox，无 margin
 
         # 基本合法性校验
@@ -111,8 +116,9 @@ class TumorROIDataset(Dataset):
           预扫描所有 case 的肿瘤体素数，按大小分三类分别设置 repeat 倍率，
           困难 case(小肿瘤/无肿瘤）在列表中出现更多次，从而被更频繁采到。
         """
-        use_hard_mining = self.small_tumor_thresh > 0 and (
-            self.small_tumor_repeat_scale > 1 or self.no_tumor_repeat_scale > 1
+        use_hard_mining = (
+            (self.small_tumor_thresh > 0 and (self.small_tumor_repeat_scale > 1 or self.no_tumor_repeat_scale > 1))
+            or (self.large_tumor_thresh > 0 and self.large_tumor_repeat_scale > 1)
         )
         if not use_hard_mining:
             # 所有 case 等频：[0,1,...,N-1, 0,1,...,N-1, ...] 共 repeats 轮
@@ -121,29 +127,30 @@ class TumorROIDataset(Dataset):
         indices = []
         n_no_tumor = 0
         n_small_tumor = 0
+        n_large_tumor = 0
         n_normal = 0
 
         for i, pt_path in enumerate(self.pt_paths):
             voxels = self._count_tumor_voxels(pt_path)
             if voxels == 0:
-                # 无肿瘤 case：用更高倍率增加采样频率
                 r = self.repeats * self.no_tumor_repeat_scale
                 n_no_tumor += 1
-            elif voxels < self.small_tumor_thresh:
-                # 小肿瘤 case：肿瘤体素数在 (0, thresh) 范围内
+            elif self.small_tumor_thresh > 0 and voxels < self.small_tumor_thresh:
                 r = self.repeats * self.small_tumor_repeat_scale
                 n_small_tumor += 1
+            elif self.large_tumor_thresh > 0 and voxels >= self.large_tumor_thresh:
+                r = self.repeats * self.large_tumor_repeat_scale
+                n_large_tumor += 1
             else:
-                # 正常 case：肿瘤体素数 >= thresh，不额外加权
                 r = self.repeats
                 n_normal += 1
-            # 将 case i 的下标放入列表 r 次
             indices.extend([i] * r)
 
         print(
             f"[TumorROIDataset] hard mining: "
             f"no_tumor={n_no_tumor}×{self.no_tumor_repeat_scale}, "
             f"small_tumor(<{self.small_tumor_thresh})={n_small_tumor}×{self.small_tumor_repeat_scale}, "
+            f"large_tumor(>={self.large_tumor_thresh})={n_large_tumor}×{self.large_tumor_repeat_scale}, "
             f"normal={n_normal}×1 | "
             f"total indices={len(indices)}"
         )

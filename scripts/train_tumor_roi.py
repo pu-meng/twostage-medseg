@@ -199,6 +199,18 @@ def parse_args():
         default=4,
         help="无肿瘤 case 的 repeat 倍率",
     )
+    p.add_argument(
+        "--large_tumor_thresh",
+        type=int,
+        default=0,
+        help="大肿瘤阈值(voxels),0=关闭大肿瘤过采样",
+    )
+    p.add_argument(
+        "--large_tumor_repeat_scale",
+        type=int,
+        default=3,
+        help="大肿瘤 case 的 repeat 倍率",
+    )
 
     # 预测 bbox 模式：用 Stage1 推理结果代替 GT bbox，消除训练/推理 domain gap
     p.add_argument(
@@ -506,6 +518,8 @@ def main():
         "small_tumor_thresh": int(args.small_tumor_thresh),
         "small_tumor_repeat_scale": int(args.small_tumor_repeat_scale),
         "no_tumor_repeat_scale": int(args.no_tumor_repeat_scale),
+        "large_tumor_thresh": int(args.large_tumor_thresh),
+        "large_tumor_repeat_scale": int(args.large_tumor_repeat_scale),
         "use_pred_bbox": bool(args.use_pred_bbox),
         "stage1_ckpt": args.stage1_ckpt,
         "stage1_model": args.stage1_model,
@@ -548,6 +562,8 @@ def main():
         small_tumor_thresh=args.small_tumor_thresh,
         small_tumor_repeat_scale=args.small_tumor_repeat_scale,
         no_tumor_repeat_scale=args.no_tumor_repeat_scale,
+        large_tumor_thresh=args.large_tumor_thresh,
+        large_tumor_repeat_scale=args.large_tumor_repeat_scale,
         pred_bboxes=pred_bboxes_train,  # None 时行为与之前完全一致
     )
 
