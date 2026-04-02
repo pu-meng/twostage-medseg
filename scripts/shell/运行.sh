@@ -33,6 +33,49 @@ CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
   --prefetch_factor 4 \
   --repeats 3
 
+
+# ============================================================
+# 实验十 — 粗糙肿瘤通道（Stage1三分类 + Stage2双通道CT+粗糙肿瘤）
+# Stage1 ckpt 换成新训练的 dynunet_liver_tumor_stage1/best.pt
+# pred_bbox_cache 需重新生成（新格式含 tumor bbox，换新路径）
+# init_ckpt: 实验八最优 0.4451
+# ============================================================
+
+CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
+  --medseg_root /home/pumengyu/medseg_project \
+  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --exp_root /home/pumengyu/experiments/twostage \
+  --exp_name tumor_dynunet_coarse_tumor_2ch \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 2 \
+  --lr 3e-4 \
+  --patch 128 128 128 \
+  --val_patch 128 128 128 \
+  --sw_batch_size 2 \
+  --val_every 3 \
+  --num_workers 4 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss dicefocal \
+  --val_overlap 0.5 \
+  --repeats 6 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_min 8 \
+  --margin_max 20 \
+  --use_pred_bbox \
+  --use_coarse_tumor \
+  --stage1_out_channels 3 \
+  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_tumor_stage1/train/TIMESTAMP/best.pt \
+  --stage1_patch 144 144 144 \
+  --stage1_model dynunet \
+  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1_3ch.json \
+  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
+
 # ============================================================
 # 实验五 — pred_bbox ROI 干净对比
 # 控制变量：只换 ROI 来源（pred_bbox），不加 hard mining

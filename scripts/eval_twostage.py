@@ -36,7 +36,9 @@ def parse_args():
     p.add_argument("--medseg_root", type=str, required=True)
     p.add_argument("--preprocessed_root", type=str, required=True)
     p.add_argument("--stage1_ckpt", type=str, required=True)
-    p.add_argument("--stage2_ckpt", type=str, required=True)
+    p.add_argument("--stage2_ckpt", type=str, default=None)
+    p.add_argument("--stage1_only", action="store_true",
+                   help="跳过 Stage2，直接用 Stage1 三分类输出（类别2=肿瘤）作为最终预测")
     p.add_argument("--stage2_ckpt_b", type=str, default=None,
                    help="fine-tune 模型路径，有则与 stage2_ckpt 做 ensemble")
     p.add_argument("--ensemble_weight_b", type=float, default=0.5,
@@ -76,6 +78,10 @@ def parse_args():
                    help="仅对Stage1也做TTA（默认TTA只加在Stage2上）")
     p.add_argument("--two_channel", action="store_true",
                    help="Stage2 使用两通道输入（Ch1=CT, Ch2=Stage1预测liver_mask），需与训练时一致")
+    p.add_argument("--use_coarse_tumor", action="store_true",
+                   help="Stage2 使用粗糙肿瘤通道（Ch1=CT, Ch2=Stage1预测粗糙肿瘤mask），需与训练时一致")
+    p.add_argument("--stage1_out_channels", type=int, default=2,
+                   help="Stage1 输出通道数：2=仅肝脏（旧版），3=肝脏+肿瘤（新版）")
     return p.parse_args()
 
 
@@ -214,7 +220,16 @@ def main():
     args = parse_args()
     add_medseg_to_syspath(args.medseg_root)
 
-    ckpt_abs = os.path.abspath(args.stage2_ckpt)
+    if args.stage1_only:
+        if args.stage1_out_channels < 3:
+            raise ValueError("--stage1_only 需要 --stage1_out_channels 3")
+        ref_ckpt = args.stage1_ckpt
+    else:
+        if args.stage2_ckpt is None:
+            raise ValueError("非 --stage1_only 模式下必须传 --stage2_ckpt")
+        ref_ckpt = args.stage2_ckpt
+
+    ckpt_abs = os.path.abspath(ref_ckpt)
     run_name = os.path.basename(os.path.dirname(ckpt_abs))  # 时间戳目录名
     if args.save_dir is None:
         # .../exp_name/train/timestamp/best.pt → .../exp_name/eval
@@ -292,35 +307,36 @@ def main():
     stage1 = build_model(
         args.stage1_model,
         in_channels=1,
-        out_channels=2,
+        out_channels=args.stage1_out_channels,
         img_size=tuple(args.stage1_patch),
     ).to(device)
 
-    stage2_in_channels = 2 if args.two_channel else 1
-    stage2 = build_model(
-        args.stage2_model,
-        in_channels=stage2_in_channels,
-        out_channels=2,
-        img_size=tuple(args.stage2_patch),
-    ).to(device)
-
     load_ckpt(args.stage1_ckpt, stage1, optimizer=None, map_location=device)
-    load_ckpt(args.stage2_ckpt, stage2, optimizer=None, map_location=device)
+    stage1.eval()
 
+    stage2 = None
     stage2_b = None
-    if args.stage2_ckpt_b is not None:#推理时将两个独立的训练的stage 2的预测概率按照权重加权平均
-        stage2_b = build_model(
+    if not args.stage1_only:
+        stage2_in_channels = 2 if (args.two_channel or args.use_coarse_tumor) else 1
+        stage2 = build_model(
             args.stage2_model,
             in_channels=stage2_in_channels,
             out_channels=2,
             img_size=tuple(args.stage2_patch),
         ).to(device)
-        load_ckpt(args.stage2_ckpt_b, stage2_b, optimizer=None, map_location=device)
-        stage2_b.eval()
-        print(f"[eval] ensemble: weight_A={1-args.ensemble_weight_b:.2f}  weight_B={args.ensemble_weight_b:.2f}")
+        load_ckpt(args.stage2_ckpt, stage2, optimizer=None, map_location=device)
+        stage2.eval()
 
-    stage1.eval()
-    stage2.eval()
+        if args.stage2_ckpt_b is not None:
+            stage2_b = build_model(
+                args.stage2_model,
+                in_channels=stage2_in_channels,
+                out_channels=2,
+                img_size=tuple(args.stage2_patch),
+            ).to(device)
+            load_ckpt(args.stage2_ckpt_b, stage2_b, optimizer=None, map_location=device)
+            stage2_b.eval()
+            print(f"[eval] ensemble: weight_A={1-args.ensemble_weight_b:.2f}  weight_B={args.ensemble_weight_b:.2f}")
 
     print(f"[eval] split={args.split}")
     print(
@@ -381,18 +397,25 @@ def main():
 
             logits1 = torch.as_tensor(logits1)  # 防御性：确保是 tensor（autocast 可能返回其他类型）
             # argmax 在 channel 维取最大值 → 每个 voxel 得到类别 id (0 或 1)
-            pred1 = torch.argmax(logits1.float(), dim=1)[0].cpu()  # [1,2,D,H,W] → [D,H,W]
+            pred1 = torch.argmax(logits1.float(), dim=1)[0].cpu()  # [1,C,D,H,W] → [D,H,W]
             liver_mask = pred1 == 1  # [D,H,W] bool，True 的位置就是预测的肝脏
+            coarse_tumor_mask = (pred1 == 2) if args.stage1_out_channels == 3 else None
 
             # 后处理：只保留最大连通域，去掉散落的假阳性小块
             liver_mask = filter_largest_component(liver_mask)
             pred1_filtered = liver_mask.long()  # 用于后续可视化保存
 
             # ================================================================
+            # stage1_only 模式：直接用 Stage1 三分类的类别2作为肿瘤预测，跳过 Stage2
+            # ================================================================
+            if args.stage1_only:
+                bbox = None
+                tumor_full = (pred1 == 2).long()  # Stage1 直接输出的粗糙肿瘤
+            # ================================================================
             # STAGE 2：肿瘤分割（在裁剪出的肝脏 ROI 上滑动窗口推理）
             # 依赖 Stage1 结果：必须先有 liver_mask 才能知道裁哪里
             # ================================================================
-            if liver_mask.sum().item() == 0:
+            elif liver_mask.sum().item() == 0:
                 # Stage1 没有预测出任何肝脏（极少数情况），则肿瘤直接置全零
                 bbox = None
                 tumor_full = torch.zeros_like(pred1, dtype=torch.long)
@@ -404,7 +427,14 @@ def main():
                 # 把 CT 裁剪到肝脏 ROI 区域，大幅缩小 Stage2 的输入尺寸
                 image_roi = crop_3d(image, bbox)       # [1,D,H,W] → [1,d,h,w]（d≤D, h≤H, w≤W）
 
-                if args.two_channel:
+                if args.use_coarse_tumor:
+                    # 第二通道：Stage1 预测粗糙肿瘤 mask 裁到同一 bbox（无肿瘤预测时全零）
+                    if coarse_tumor_mask is not None and coarse_tumor_mask.sum().item() > 0:
+                        tumor_roi = crop_3d(coarse_tumor_mask.float().unsqueeze(0), bbox)
+                    else:
+                        tumor_roi = torch.zeros_like(image_roi)
+                    x_roi = torch.cat([image_roi, tumor_roi], dim=0).unsqueeze(0).to(device)
+                elif args.two_channel:
                     # 第二通道：Stage1 预测 liver_mask 裁到同一 bbox
                     liver_roi = crop_3d(liver_mask.float().unsqueeze(0), bbox)  # [1,d,h,w]
                     image_roi_2ch = torch.cat([image_roi, liver_roi], dim=0)    # [2,d,h,w]
