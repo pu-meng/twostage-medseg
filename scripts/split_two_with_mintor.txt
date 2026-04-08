@@ -1,0 +1,220 @@
+======================================================================
+[TRAIN (112个,*为监控子集)]  共 112 个案例
+======================================================================
+
+  --- 无肿瘤 (n=13) ---
+  liver_105    liver= 2,574,283
+  liver_106    liver= 1,442,647
+  liver_114    liver= 2,653,630
+  liver_115    liver= 2,221,230
+  liver_119    liver= 3,696,632
+  liver_32     liver= 3,116,018
+  liver_34     liver= 2,144,814
+  liver_38     liver= 2,483,165 *
+  liver_41     liver= 2,394,893
+  liver_47     liver= 1,994,619
+  liver_87     liver= 3,344,670
+  liver_89     liver= 1,820,385
+  liver_91     liver= 2,403,896
+
+  --- 极小 (n=23) ---
+  tumor体素范围: 54 ~ 4,320  mean=1,804
+  liver_83     liver= 1,671,744  tumor=        54
+  liver_127    liver= 2,394,457  tumor=       223
+  liver_25     liver= 1,830,388  tumor=       264
+  liver_112    liver= 1,912,699  tumor=       558
+  liver_15     liver= 2,033,064  tumor=       588
+  liver_65     liver= 1,276,504  tumor=       825
+  liver_125    liver= 2,378,803  tumor=       843
+  liver_59     liver= 2,059,409  tumor=       972
+  liver_67     liver= 2,043,212  tumor=     1,053
+  liver_20     liver= 2,765,407  tumor=     1,201
+  liver_92     liver= 1,783,370  tumor=     1,404
+  liver_24     liver= 2,014,812  tumor=     1,458 *
+  liver_95     liver= 2,602,024  tumor=     1,724
+  liver_14     liver= 2,097,460  tumor=     1,802
+  liver_3      liver= 2,289,290  tumor=     1,898
+  liver_54     liver= 2,647,433  tumor=     2,610
+  liver_42     liver= 2,037,122  tumor=     2,662
+  liver_63     liver= 2,554,599  tumor=     2,804
+  liver_86     liver= 2,571,506  tumor=     2,903
+  liver_73     liver= 2,984,124  tumor=     3,123
+  liver_62     liver= 1,734,450  tumor=     3,940 *
+  liver_107    liver= 2,255,863  tumor=     4,272
+  liver_55     liver= 2,763,934  tumor=     4,320
+
+  --- 小 (n=39) ---
+  tumor体素范围: 5,009 ~ 46,206  mean=19,595
+  liver_126    liver= 2,580,373  tumor=     5,009
+  liver_111    liver= 3,301,582  tumor=     5,345
+  liver_61     liver= 2,380,291  tumor=     6,138
+  liver_120    liver= 2,326,286  tumor=     6,326
+  liver_85     liver= 3,019,477  tumor=     6,685
+  liver_11     liver= 2,154,699  tumor=     6,981
+  liver_45     liver= 1,781,906  tumor=     7,028 *
+  liver_99     liver= 2,307,452  tumor=     7,580
+  liver_68     liver= 2,059,224  tumor=     7,964
+  liver_66     liver= 2,507,492  tumor=     8,644
+  liver_50     liver= 2,135,845  tumor=     9,137
+  liver_0      liver= 1,994,592  tumor=     9,262
+  liver_53     liver= 2,364,200  tumor=     9,691
+  liver_31     liver= 1,650,665  tumor=    10,218
+  liver_43     liver= 3,973,384  tumor=    10,921
+  liver_75     liver= 2,568,017  tumor=    11,380
+  liver_19     liver= 2,563,628  tumor=    12,306 *
+  liver_77     liver= 2,768,592  tumor=    19,405 *
+  liver_29     liver= 2,396,038  tumor=    20,627
+  liver_30     liver= 3,464,910  tumor=    20,938
+  liver_10     liver= 2,482,166  tumor=    21,083
+  liver_8      liver= 2,768,364  tumor=    21,397
+  liver_37     liver= 2,726,331  tumor=    21,630
+  liver_96     liver= 3,265,253  tumor=    23,291
+  liver_1      liver= 2,153,163  tumor=    24,042
+  liver_17     liver= 2,328,275  tumor=    24,621
+  liver_13     liver= 1,979,012  tumor=    24,993
+  liver_102    liver= 2,671,696  tumor=    25,296
+  liver_79     liver= 1,821,750  tumor=    25,511
+  liver_7      liver= 2,490,162  tumor=    26,684
+  liver_78     liver= 2,263,577  tumor=    27,597
+  liver_35     liver= 4,681,567  tumor=    30,076
+  liver_21     liver= 2,581,728  tumor=    31,863
+  liver_23     liver= 1,803,682  tumor=    33,045
+  liver_6      liver= 2,741,629  tumor=    35,543
+  liver_72     liver= 2,059,600  tumor=    37,645
+  liver_26     liver= 1,751,662  tumor=    39,005 *
+  liver_22     liver= 1,929,111  tumor=    43,095
+  liver_52     liver= 1,899,186  tumor=    46,206
+
+  --- 中等 (n=22) ---
+  tumor体素范围: 50,393 ~ 281,771  mean=128,013
+  liver_109    liver= 2,131,408  tumor=    50,393
+  liver_103    liver= 1,783,621  tumor=    57,190
+  liver_36     liver= 1,798,871  tumor=    58,378 *
+  liver_113    liver= 2,354,174  tumor=    60,221
+  liver_46     liver=   794,936  tumor=    62,181
+  liver_82     liver= 2,169,455  tumor=    65,334 *
+  liver_110    liver= 1,885,970  tumor=    75,969
+  liver_124    liver= 1,532,853  tumor=    77,850
+  liver_70     liver= 1,469,777  tumor=    78,902
+  liver_122    liver= 1,857,501  tumor=    83,513
+  liver_27     liver= 1,783,152  tumor=   104,711
+  liver_80     liver= 1,913,547  tumor=   121,173
+  liver_48     liver= 2,985,566  tumor=   123,888
+  liver_88     liver= 2,113,681  tumor=   170,931 *
+  liver_93     liver= 2,206,704  tumor=   179,360
+  liver_40     liver= 2,846,748  tumor=   179,730
+  liver_90     liver= 2,336,339  tumor=   179,825
+  liver_74     liver= 3,543,546  tumor=   187,323
+  liver_104    liver= 2,114,276  tumor=   197,457
+  liver_128    liver= 3,271,339  tumor=   204,192
+  liver_16     liver= 1,835,877  tumor=   216,006
+  liver_123    liver= 3,278,252  tumor=   281,771
+
+  --- 大 (n=15) ---
+  tumor体素范围: 319,586 ~ 1,452,281  mean=614,817
+  liver_84     liver= 2,886,030  tumor=   319,586
+  liver_71     liver= 2,125,395  tumor=   325,467
+  liver_97     liver= 2,462,406  tumor=   388,753
+  liver_116    liver= 2,334,067  tumor=   391,463
+  liver_76     liver= 2,510,136  tumor=   391,856
+  liver_51     liver= 2,353,415  tumor=   445,773
+  liver_56     liver= 2,776,463  tumor=   506,998 *
+  liver_118    liver= 2,606,572  tumor=   510,681
+  liver_39     liver= 4,390,792  tumor=   512,087
+  liver_33     liver= 2,048,144  tumor=   639,212 *
+  liver_130    liver= 1,860,403  tumor=   664,204
+  liver_100    liver= 2,512,464  tumor=   788,728
+  liver_108    liver= 2,121,738  tumor=   909,011
+  liver_129    liver= 3,891,760  tumor=   976,167
+  liver_4      liver= 3,157,924  tumor= 1,452,281
+
+  (* 标记为监控子集,同时参与训练)
+
+======================================================================
+[MONITOR (12个,train子集,用于选best ckpt)]  共 12 个案例
+======================================================================
+
+  --- 无肿瘤 (n=1) ---
+  liver_38     liver= 2,483,165
+
+  --- 极小 (n=2) ---
+  tumor体素范围: 1,458 ~ 3,940  mean=2,699
+  liver_24     liver= 2,014,812  tumor=     1,458
+  liver_62     liver= 1,734,450  tumor=     3,940
+
+  --- 小 (n=4) ---
+  tumor体素范围: 7,028 ~ 39,005  mean=19,436
+  liver_45     liver= 1,781,906  tumor=     7,028
+  liver_19     liver= 2,563,628  tumor=    12,306
+  liver_77     liver= 2,768,592  tumor=    19,405
+  liver_26     liver= 1,751,662  tumor=    39,005
+
+  --- 中等 (n=3) ---
+  tumor体素范围: 58,378 ~ 170,931  mean=98,214
+  liver_36     liver= 1,798,871  tumor=    58,378
+  liver_82     liver= 2,169,455  tumor=    65,334
+  liver_88     liver= 2,113,681  tumor=   170,931
+
+  --- 大 (n=2) ---
+  tumor体素范围: 506,998 ~ 639,212  mean=573,105
+  liver_56     liver= 2,776,463  tumor=   506,998
+  liver_33     liver= 2,048,144  tumor=   639,212
+
+======================================================================
+[TEST (19个,nnUNet fold0,最终对比)]  共 19 个案例
+======================================================================
+
+  --- 极小 (n=5) ---
+  tumor体素范围: 524 ~ 4,655  mean=2,153
+  liver_12     liver= 2,642,734  tumor=       524
+  liver_5      liver= 2,105,664  tumor=       608
+  liver_58     liver= 1,831,007  tumor=     2,019
+  liver_121    liver= 2,651,000  tumor=     2,959
+  liver_81     liver= 2,123,878  tumor=     4,655
+
+  --- 小 (n=8) ---
+  tumor体素范围: 5,226 ~ 44,922  mean=18,644
+  liver_69     liver= 2,704,832  tumor=     5,226
+  liver_57     liver= 2,720,679  tumor=     6,027
+  liver_18     liver= 1,929,384  tumor=    10,036
+  liver_2      liver= 2,811,186  tumor=    12,559
+  liver_60     liver= 3,501,108  tumor=    21,525
+  liver_9      liver= 2,250,541  tumor=    22,296
+  liver_49     liver= 2,409,904  tumor=    26,568
+  liver_94     liver= 2,135,791  tumor=    44,922
+
+  --- 中等 (n=2) ---
+  tumor体素范围: 193,426 ~ 272,406  mean=232,916
+  liver_101    liver= 3,309,058  tumor=   193,426
+  liver_44     liver= 2,815,601  tumor=   272,406
+
+  --- 大 (n=4) ---
+  tumor体素范围: 314,301 ~ 560,887  mean=382,456
+  liver_28     liver= 3,890,482  tumor=   314,301
+  liver_64     liver= 2,899,945  tumor=   317,796
+  liver_98     liver= 1,946,515  tumor=   336,843
+  liver_117    liver= 2,177,005  tumor=   560,887
+
+======================================================================
+汇总统计
+======================================================================
+  类别        train       monitor     test        合计        
+  ----------------------------------------------------------
+  无肿瘤       13          1           0           14        
+  极小        23          2           5           30        
+  小         39          4           8           51        
+  中等        22          3           2           27        
+  大         15          2           4           21        
+  ----------------------------------------------------------
+  合计        112         12          19          143       
+
+阈值说明:
+  极小: tumor < 5,000 体素
+  小:   5,000 <= tumor < 50,000 体素
+  中等: 50,000 <= tumor < 300,000 体素
+  大:   tumor >= 300,000 体素
+
+划分说明:
+  train:   112个全部参与训练（包含monitor子集）
+  monitor: 12个,train的子集,覆盖各类别,用于训练中监控dice/选best ckpt
+  test:    19个,nnUNet fold0验证集,用于最终和nnUNet对比

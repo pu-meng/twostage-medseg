@@ -1,0 +1,35 @@
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root /home/pumengyu/medseg_project \
+  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --exp_root /home/pumengyu/experiments/twostage \
+  --exp_name dynunet_dicece_nnunet_p128 \
+  --model dynunet \
+  --epochs 300 \
+  --batch_size 2 \
+  --lr 3e-4 \
+  --patch 128 128 128 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 1 \
+  --val_every 3 \
+  --num_workers 2 \
+  --prefetch_factor 2 \
+  --amp \
+  --loss dicece \
+  --val_overlap 0.0 \
+  --repeats 6 \
+  --tumor_ratios 0.05 0.95 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_min 8 \
+  --margin_max 20 \
+  --use_pred_bbox \
+  --large_tumor_thresh 50000 \
+  --large_tumor_repeat_scale 3 \
+  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_patch 144 144 144 \
+  --stage1_model dynunet \
+  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
+  --resume /home/pumengyu/experiments/twostage/dynunet_dicece_nnunet_p128/train/04-05-01-14-36/last.pt \
+  --seed 0

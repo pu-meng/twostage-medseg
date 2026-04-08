@@ -8,10 +8,10 @@ from typing import Sequence
 import torch
 from torch.utils.data import Dataset
 
-# 相对导入：从当前包（twostage/）下引入工具函数
+# 相对导入：从当前包(twostage/)下引入工具函数
 #   compute_bbox_from_mask : 根据 liver mask 计算紧致包围框并加 margin
 #   crop_3d               : 按 bbox 裁剪 [C,D,H,W] 张量
-#   bbox_to_dict          : 将 bbox tuple 转为可序列化的 dict（供 meta 记录）
+#   bbox_to_dict          : 将 bbox tuple 转为可序列化的 dict(供 meta 记录)
 from .roi_utils import compute_bbox_from_mask, crop_3d, bbox_to_dict
 import random
 
@@ -20,7 +20,7 @@ class TumorROIDataset(Dataset):
     """
     Stage 2 肿瘤分割数据集：在线从完整 CT volume 裁出肝脏 ROI，再做肿瘤二分类。
 
-    输入格式（离线预处理好的 .pt 文件）：
+    输入格式(离线预处理好的 .pt 文件)：
         {
             "image": Tensor[1, D, H, W]  float32   # CT 强度
             "label": Tensor[1, D, H, W]  int64     # 0=bg, 1=liver, 2=tumor
@@ -28,13 +28,13 @@ class TumorROIDataset(Dataset):
 
     __getitem__ 在线处理流程：
         1. 用 GT label > 0 构造 liver mask，过滤最大连通域去噪
-        2. 在 liver mask 上计算 bbox（加随机或固定 margin）
-        3. 对 bbox 做随机扰动（bbox_jitter），模拟 Stage 1 预测误差
+        2. 在 liver mask 上计算 bbox(加随机或固定 margin)
+        3. 对 bbox 做随机扰动(bbox_jitter)，模拟 Stage 1 预测误差
         4. 按 bbox 裁出 image_roi / label_roi
         5. 将 label 重映射为肿瘤二分类：tumor(2)→1，其余→0
         6. 经 transform 做 patch crop + 数据增强后返回
 
-    差异化 oversampling（hard case mining）：
+    差异化 oversampling(hard case mining)：
         通过 __init__ 时预扫描每个 case 的肿瘤体素数，
         让目标样本在 _indices 中出现更多次，DataLoader 每 epoch
         更频繁地采到它们：
@@ -46,30 +46,30 @@ class TumorROIDataset(Dataset):
 
     def __init__(
         self,
-        pt_paths: Sequence[str],       # 所有 .pt 文件路径列表
-        transform=None,                # MONAI transform，包含 patch crop + 增强
-        repeats: int = 1,              # 每个 case 每 epoch 被采样的基础次数
-        margin: int = 12,              # liver bbox 向外扩展的固定体素数
-        keep_meta: bool = True,        # 是否在输出 dict 中附带调试元信息
-        bbox_jitter: bool = False,     # 是否对 bbox 做随机扰动
-        bbox_max_shift: int = 8,       # bbox 每个边界的最大扰动量（体素）
-        random_margin: bool = False,   # 是否随机采样 margin（模拟 ROI 尺度波动）
-        margin_min: int = 8,           # random_margin 时的最小 margin
-        margin_max: int = 20,          # random_margin 时的最大 margin
-        small_tumor_thresh: int = 0,   # 小肿瘤判定阈值（体素数），0 表示关闭小肿瘤 hard mining
+        pt_paths: Sequence[str],  # 所有 .pt 文件路径列表
+        transform=None,  # MONAI transform，包含 patch crop + 增强
+        repeats: int = 1,  # 每个 case 每 epoch 被采样的基础次数
+        margin: int = 12,  # liver bbox 向外扩展的固定体素数
+        keep_meta: bool = True,  # 是否在输出 dict 中附带调试元信息
+        bbox_jitter: bool = False,  # 是否对 bbox 做随机扰动
+        bbox_max_shift: int = 8,  # bbox 每个边界的最大扰动量(体素)
+        random_margin: bool = False,  # 是否随机采样 margin(模拟 ROI 尺度波动)
+        margin_min: int = 8,  # random_margin 时的最小 margin
+        margin_max: int = 20,  # random_margin 时的最大 margin
+        small_tumor_thresh: int = 0,  # 小肿瘤判定阈值(体素数)，0 表示关闭小肿瘤 hard mining
         small_tumor_repeat_scale: int = 1,  # 小肿瘤 case 的 repeat 倍率
-        no_tumor_repeat_scale: int = 1,     # 无肿瘤 case 的 repeat 倍率
-        large_tumor_thresh: int = 0,        # 大肿瘤判定阈值（体素数），0 表示关闭大肿瘤过采样
+        no_tumor_repeat_scale: int = 1,  # 无肿瘤 case 的 repeat 倍率
+        large_tumor_thresh: int = 0,  # 大肿瘤判定阈值(体素数)，0 表示关闭大肿瘤过采样
         large_tumor_repeat_scale: int = 1,  # 大肿瘤 case 的 repeat 倍率
-        pred_bboxes: dict | None = None,    # Stage1 预测 tight bbox 字典
-                                            # 旧格式: {case_name: (z0,z1,y0,y1,x0,x1)}
-                                            # 新格式: {case_name: {"liver": (...), "tumor": (...) or None}}
-                                            # 传入时用预测 bbox 代替 GT bbox，消除训练/推理 domain gap
-                                            # None 则保持原有 GT bbox + jitter 行为
-        two_channel: bool = False,          # 是否启用两通道输入（Ch1=CT, Ch2=GT liver mask）
-                                            # 训练时用 GT liver mask 作第二通道，推理时换成 Stage1 预测
-        use_coarse_tumor: bool = False,     # 是否启用粗糙肿瘤通道（Ch1=CT, Ch2=Stage1粗糙肿瘤mask）
-                                            # 需要 pred_bboxes 为新格式（含 tumor bbox）
+        pred_bboxes: dict | None = None,  # Stage1 预测 tight bbox 字典
+        # 旧格式: {case_name: (z0,z1,y0,y1,x0,x1)}
+        # 新格式: {case_name: {"liver": (...), "tumor": (...) or None}}
+        # 传入时用预测 bbox 代替 GT bbox，消除训练/推理 domain gap
+        # None 则保持原有 GT bbox + jitter 行为
+        two_channel: bool = False,  # 是否启用两通道输入(Ch1=CT, Ch2=GT liver mask)
+        # 训练时用 GT liver mask 作第二通道，推理时换成 Stage1 预测
+        use_coarse_tumor: bool = False,  # 是否启用粗糙肿瘤通道(Ch1=CT, Ch2=Stage1粗糙肿瘤mask)
+        # 需要 pred_bboxes 为新格式(含 tumor bbox)
     ) -> None:
         self.pt_paths = [str(p) for p in pt_paths]
         self.transform = transform
@@ -102,11 +102,11 @@ class TumorROIDataset(Dataset):
         if self.margin_min > self.margin_max:
             raise ValueError("margin_min 必须 <= margin_max")
 
-        # 构建展开后的索引列表（hard mining 时困难 case 会出现多次）
+        # 构建展开后的索引列表(hard mining 时困难 case 会出现多次)
         self._indices = self._build_indices()
 
     def _count_tumor_voxels(self, pt_path: str) -> int:
-        """读取单个 .pt 文件，返回 label==2（肿瘤）的体素数，用于 hard mining 分类。"""
+        """读取单个 .pt 文件，返回 label==2(肿瘤)的体素数，用于 hard mining 分类。"""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
             data = torch.load(
@@ -118,16 +118,16 @@ class TumorROIDataset(Dataset):
         """
         构建展开后的 case 索引列表，决定每个 case 每 epoch 被采样几次。
 
-        - 未开启 hard mining（small_tumor_thresh==0 或倍率均为 1）：
+        - 未开启 hard mining(small_tumor_thresh==0 或倍率均为 1)：
           直接将 [0..N-1] 重复 repeats 次，所有 case 等频采样。
         - 开启 hard mining:
           预扫描所有 case 的肿瘤体素数，按大小分三类分别设置 repeat 倍率，
-          困难 case(小肿瘤/无肿瘤）在列表中出现更多次，从而被更频繁采到。
+          困难 case(小肿瘤/无肿瘤)在列表中出现更多次，从而被更频繁采到。
         """
         use_hard_mining = (
-            (self.small_tumor_thresh > 0 and (self.small_tumor_repeat_scale > 1 or self.no_tumor_repeat_scale > 1))
-            or (self.large_tumor_thresh > 0 and self.large_tumor_repeat_scale > 1)
-        )
+            self.small_tumor_thresh > 0
+            and (self.small_tumor_repeat_scale > 1 or self.no_tumor_repeat_scale > 1)
+        ) or (self.large_tumor_thresh > 0 and self.large_tumor_repeat_scale > 1)
         if not use_hard_mining:
             # 所有 case 等频：[0,1,...,N-1, 0,1,...,N-1, ...] 共 repeats 轮
             return list(range(len(self.pt_paths))) * self.repeats
@@ -169,7 +169,7 @@ class TumorROIDataset(Dataset):
         return indices
 
     def __len__(self) -> int:
-        # 返回展开后的总样本数（DataLoader 据此决定每 epoch 迭代次数）
+        # 返回展开后的总样本数(DataLoader 据此决定每 epoch 迭代次数)
         return len(self._indices)
 
     def _sample_margin(self) -> int:
@@ -202,7 +202,7 @@ class TumorROIDataset(Dataset):
         实现细节：
             - 每个边界独立在 [-bbox_max_shift, +bbox_max_shift] 内随机偏移
             - 偏移后需裁回合法范围，保证：
-                z0 ∈ [0, D-1]，z1 ∈ [z0+1, D]（框至少 1 个体素厚，不越出 volume）
+                z0 ∈ [0, D-1]，z1 ∈ [z0+1, D](框至少 1 个体素厚，不越出 volume)
               y/x 轴同理
         """
         if not self.bbox_jitter or self.bbox_max_shift <= 0:
@@ -220,7 +220,7 @@ class TumorROIDataset(Dataset):
         x0 += random.randint(-s, s)
         x1 += random.randint(-s, s)
 
-        # 裁回合法范围：起点 >= 0，终点 <= 轴长，且终点 > 起点（框不退化为零厚度）
+        # 裁回合法范围：起点 >= 0，终点 <= 轴长，且终点 > 起点(框不退化为零厚度)
         z0 = max(0, min(z0, D - 1))
         z1 = max(z0 + 1, min(z1, D))
 
@@ -248,12 +248,14 @@ class TumorROIDataset(Dataset):
             )
 
         if not isinstance(data, dict):
-            raise TypeError(f"expect dict from torch.load, got {type(data)} @ {pt_path}")
+            raise TypeError(
+                f"expect dict from torch.load, got {type(data)} @ {pt_path}"
+            )
         if "image" not in data or "label" not in data:
             raise KeyError(f"pt sample missing image/label keys @ {pt_path}")
 
-        image = data["image"]   # [1, D, H, W] float32
-        label = data["label"]   # [1, D, H, W] int64，值域 {0,1,2}
+        image = data["image"]  # [1, D, H, W] float32
+        label = data["label"]  # [1, D, H, W] int64，值域 {0,1,2}
 
         if image.ndim != 4 or label.ndim != 4:
             raise ValueError(
@@ -270,16 +272,26 @@ class TumorROIDataset(Dataset):
         if "crop_bbox" in data:
             crop_bbox = data["crop_bbox"]
             tight_bbox = data["tight_bbox"]
-            cz0, _, cy0, _, cx0, _ = crop_bbox[0], crop_bbox[1], crop_bbox[2], crop_bbox[3], crop_bbox[4], crop_bbox[5]
+            cz0, _, cy0, _, cx0, _ = (
+                crop_bbox[0],
+                crop_bbox[1],
+                crop_bbox[2],
+                crop_bbox[3],
+                crop_bbox[4],
+                crop_bbox[5],
+            )
             tz0, tz1, ty0, ty1, tx0, tx1 = tight_bbox
             D, H, W = image.shape[1], image.shape[2], image.shape[3]
             rz0, rz1 = tz0 - cz0, tz1 - cz0
             ry0, ry1 = ty0 - cy0, ty1 - cy0
             rx0, rx1 = tx0 - cx0, tx1 - cx0
             bbox = (
-                max(0, rz0 - cur_margin), min(D, rz1 + cur_margin),
-                max(0, ry0 - cur_margin), min(H, ry1 + cur_margin),
-                max(0, rx0 - cur_margin), min(W, rx1 + cur_margin),
+                max(0, rz0 - cur_margin),
+                min(D, rz1 + cur_margin),
+                max(0, ry0 - cur_margin),
+                min(H, ry1 + cur_margin),
+                max(0, rx0 - cur_margin),
+                min(W, rx1 + cur_margin),
             )
             image_roi = crop_3d(image, bbox)
             label_roi = crop_3d(label, bbox)
@@ -292,9 +304,12 @@ class TumorROIDataset(Dataset):
                 z0, z1, y0, y1, x0, x1 = entry
             D, H, W = image.shape[1], image.shape[2], image.shape[3]
             bbox = (
-                max(0, z0 - cur_margin), min(D, z1 + cur_margin),
-                max(0, y0 - cur_margin), min(H, y1 + cur_margin),
-                max(0, x0 - cur_margin), min(W, x1 + cur_margin),
+                max(0, z0 - cur_margin),
+                min(D, z1 + cur_margin),
+                max(0, y0 - cur_margin),
+                min(H, y1 + cur_margin),
+                max(0, x0 - cur_margin),
+                min(W, x1 + cur_margin),
             )
             image_roi = crop_3d(image, bbox)
             label_roi = crop_3d(label, bbox)
@@ -309,12 +324,14 @@ class TumorROIDataset(Dataset):
         tumor_roi = (label_roi == 2).long()
 
         if self.use_coarse_tumor:
-            # Ch1: CT，Ch2: Stage1 粗糙肿瘤 mask（训练时用 GT tumor mask 代替）
+            # Ch1: CT，Ch2: Stage1 粗糙肿瘤 mask(训练时用 GT tumor mask 代替)
             coarse_tumor = (label_roi == 2).float()  # [1, d, h, w]  0/1
-            image_2ch = torch.cat([image_roi.float(), coarse_tumor], dim=0)  # [2, d, h, w]
+            image_2ch = torch.cat(
+                [image_roi.float(), coarse_tumor], dim=0
+            )  # [2, d, h, w]
         elif self.two_channel:
-            # Ch1: CT，Ch2: GT liver mask（训练时用 GT，推理时由 eval 脚本替换为 Stage1 预测）
-            liver_roi = (label_roi > 0).float()   # [1, d, h, w]  0/1
+            # Ch1: CT，Ch2: GT liver mask(训练时用 GT，推理时由 eval 脚本替换为 Stage1 预测)
+            liver_roi = (label_roi > 0).float()  # [1, d, h, w]  0/1
             image_2ch = torch.cat([image_roi.float(), liver_roi], dim=0)  # [2, d, h, w]
         else:
             image_2ch = image_roi.float()
@@ -330,11 +347,11 @@ class TumorROIDataset(Dataset):
             out["roi_shape"] = list(image_roi.shape)
             out["margin"] = int(cur_margin)
 
-        # ── transform（patch crop + 数据增强）────────────────────────────────
+        # ── transform(patch crop + 数据增强)────────────────────────────────
         if self.transform is not None:
             out = self.transform(out)
 
-        # MONAI 某些 transform（如 RandCropByPosNegLabel）会返回 list
+        # MONAI 某些 transform(如 RandCropByPosNegLabel)会返回 list
         # len==1 时拆包为单个 dict；len>1 时保留 list，
         # 由 DataLoader 的 list_data_collate 展平为 batch_size * num_samples
         if isinstance(out, list) and len(out) == 1:

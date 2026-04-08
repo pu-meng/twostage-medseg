@@ -15,7 +15,7 @@ from twostage.roi_utils import compute_bbox_from_mask
 import torch
 from torch.utils.data import DataLoader
 from monai.data import list_data_collate
-from medseg.data.dataset_offline import load_pt_paths, split_three_ways, split_fixed
+from medseg.data.dataset_offline import load_pt_paths, split_two_with_monitor
 from medseg.data.transforms_offline import (
     build_train_transforms,
     build_val_transforms,
@@ -92,8 +92,20 @@ def parse_args():
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--val_ratio", type=float, default=0.2)
     p.add_argument("--test_ratio", type=float, default=0.1)
-    p.add_argument("--patch", type=int, nargs=3, default=[96, 96, 96],help="训练用的 patch 大小，默认 96 96 96")
-    p.add_argument("--val_patch", type=int, nargs=3, default=[96, 96, 96],help="验证用的 patch 大小，默认 96 96 96")
+    p.add_argument(
+        "--patch",
+        type=int,
+        nargs=3,
+        default=[96, 96, 96],
+        help="训练用的 patch 大小，默认 96 96 96",
+    )
+    p.add_argument(
+        "--val_patch",
+        type=int,
+        nargs=3,
+        default=[96, 96, 96],
+        help="验证用的 patch 大小，默认 96 96 96",
+    )
 
     p.add_argument(
         "--sw_batch_size", type=int, default=1, help="只在验证时候用,训练不用"
@@ -119,14 +131,22 @@ def parse_args():
         help="表示每个worker提前预加载的batch数量,只在num_workers>0时有效;会占用CPU内存,不影响GPU的显存",
     )
 
-    p.add_argument("--repeats", type=int, default=3,help="训练用的数据重复次数,默认3,可以通过增加这个值来增强数据量较少时的训练效果")
+    p.add_argument(
+        "--repeats",
+        type=int,
+        default=3,
+        help="训练用的数据重复次数,默认3,可以通过增加这个值来增强数据量较少时的训练效果",
+    )
     p.add_argument(
         "--amp",
         action="store_true",
         help="store_true表示这个参数出现就是True,不出现为False",
     )
     p.add_argument(
-        "--loss", type=str, default="dicece", choices=["dicece", "dicefocal", "tversky"]
+        "--loss",
+        type=str,
+        default="dicece",
+        choices=["dicece", "dicefocal", "tversky", "focaltversky"],
     )
     p.add_argument("--val_every", type=int, default=5)
     p.add_argument("--seed", type=int, default=0)
@@ -297,7 +317,7 @@ def load_init_weights(path, model, map_location="cpu"):
     """
     ckpt = torch.load(path, map_location=map_location, weights_only=False)
     src = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-#去掉_orig_mod.前缀,兼容某些checkpoint里参数名带有_orig_mod.的情况
+    # 去掉_orig_mod.前缀,兼容某些checkpoint里参数名带有_orig_mod.的情况
     if any(k.startswith("_orig_mod.") for k in src):
         src = {k.removeprefix("_orig_mod."): v for k, v in src.items()}
 
@@ -306,15 +326,23 @@ def load_init_weights(path, model, map_location="cpu"):
     # dynunet_ca 的 backbone 参数名带 backbone. 前缀，裸 ckpt 里没有，尝试加前缀重映射
     if len(matched) == 0:
         remapped = {"backbone." + k: v for k, v in src.items()}
-        matched = {k: v for k, v in remapped.items() if k in dst and dst[k].shape == v.shape}
+        matched = {
+            k: v for k, v in remapped.items() if k in dst and dst[k].shape == v.shape
+        }
     dst.update(matched)
     model.load_state_dict(dst, strict=False)
     print(f"[init] loaded {len(matched)} matched params from {path}")
 
 
 def build_pred_bboxes(
-    stage1_ckpt, pt_paths, device, stage1_model, stage1_patch, overlap,
-    cache_path=None, stage1_out_channels=2,
+    stage1_ckpt,
+    pt_paths,
+    device,
+    stage1_model,
+    stage1_patch,
+    overlap,
+    cache_path=None,
+    stage1_out_channels=2,
 ):
     """
     用 Stage1 模型对训练集推理, 返回每个 case 的预测 tight bbox 字典。
@@ -345,14 +373,20 @@ def build_pred_bboxes(
             pred_bboxes = {k: tuple(v) for k, v in raw.items()}
         else:
             pred_bboxes = {
-                k: {"liver": tuple(v["liver"]), "tumor": tuple(v["tumor"]) if v["tumor"] is not None else None}
+                k: {
+                    "liver": tuple(v["liver"]),
+                    "tumor": tuple(v["tumor"]) if v["tumor"] is not None else None,
+                }
                 for k, v in raw.items()
             }
         print(f"[pred_bbox] loaded from cache ({len(pred_bboxes)} cases): {cache_path}")
         return pred_bboxes
 
     stage1 = build_model(
-        stage1_model, in_channels=1, out_channels=stage1_out_channels, img_size=tuple(stage1_patch)
+        stage1_model,
+        in_channels=1,
+        out_channels=stage1_out_channels,
+        img_size=tuple(stage1_patch),
     ).to(device)
     load_init_weights(stage1_ckpt, stage1, map_location=device)
     stage1.eval()
@@ -420,10 +454,15 @@ def build_pred_bboxes(
     # 保存缓存
     if cache_path is not None:
         os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+
         def _serialize(v):
             if isinstance(v, tuple):
                 return list(v)
-            return {"liver": list(v["liver"]), "tumor": list(v["tumor"]) if v["tumor"] is not None else None}
+            return {
+                "liver": list(v["liver"]),
+                "tumor": list(v["tumor"]) if v["tumor"] is not None else None,
+            }
+
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump({k: _serialize(v) for k, v in pred_bboxes.items()}, f, indent=2)
         print(f"[pred_bbox] cache saved to: {cache_path}")
@@ -466,17 +505,17 @@ def main():
 
     set_seed(args.seed)
     torch.backends.cudnn.benchmark = True  # 固定patch尺寸时自动选最快卷积算法
+    # 减少显存碎片化，避免因碎片导致的 OOM 或 cudaMalloc 停顿
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
     all_pt = load_pt_paths(args.preprocessed_root)
-    tr, va, te = split_fixed(all_pt)  # 固定划分，val对齐nnUNet fold0
+    tr, va, te = split_two_with_monitor(all_pt)  # train=112, monitor=12(子集), test=19
     # tr,va,te都是路径列表
 
-    tr_all, va_all, te_all = tr, va, te
+    tr_all, _, te_all = tr, va, te
 
     if args.train_n > 0:
         tr = tr[: args.train_n]
-    if args.val_n > 0:
-        va = va[: args.val_n]
 
     # 预测 bbox 模式: 训练开始前用 Stage1 对训练集推理一次, 生成 bbox 字典
     # 训练集和验证集分开处理: 验证集始终用 GT bbox (eval 阶段不存在 domain gap 问题)
@@ -501,12 +540,12 @@ def main():
     tr_pos_cur, tr_neg_cur = filter_tumor_positive_cases(tr)
     va_pos_cur, va_neg_cur = filter_tumor_positive_cases(va)
 
-    print(f"[原始划分] train={len(tr)} val={len(va)} test={len(te)}")
+    print(f"[原始划分] train={len(tr)} monitor={len(va)} test={len(te)}")
     print(
-        f"[有肿瘤部分] train={len(tr_pos_cur)} val={len(va_pos_cur)} test={len(te_pos)}"
+        f"[有肿瘤部分] train={len(tr_pos_cur)} monitor={len(va_pos_cur)} test={len(te_pos)}"
     )
     print(
-        f"[无肿瘤部分] train={len(tr_neg_cur)} val={len(va_neg_cur)} test={len(te_neg)}"
+        f"[无肿瘤部分] train={len(tr_neg_cur)} monitor={len(va_neg_cur)} test={len(te_neg)}"
     )
 
     timestamp = datetime.now().strftime("%m-%d-%H-%M-%S")
@@ -544,7 +583,7 @@ def main():
         "tumor_ratios": list(args.tumor_ratios),
         "margin": int(args.margin),
         "n_train_cases": len(tr),
-        "n_val_cases": len(va),
+        "n_monitor_cases": len(va),
         "n_test_cases": len(te),
         "num_classes": 2,
         "optimizer": "AdamW",
@@ -578,12 +617,12 @@ def main():
     # 记录数据集划分统计：train/val/test 各有多少 case，其中含肿瘤的有多少
     diag.log_dataset(args, tr, va, te, tr_pos_cur, va_pos_cur)
 
-    # 数据泄漏检查：确认 train/val/test 三组之间没有重复的 case
-    diag.check_data_leakage(tr_all, va_all, te_all)
+    # 数据泄漏检查：monitor是train子集，只检查train/test无重叠
+    diag.check_data_leakage(tr_all, [], te_all)
 
     # 抽样检查标签分布：统计前 N 个 case 里 background/liver/tumor 各占多少体素
     diag.log_label_stats(tr, tag="train", max_cases=10)
-    diag.log_label_stats(va, tag="val", max_cases=5)
+    diag.log_label_stats(va, tag="monitor", max_cases=5)
 
     # 抽样检查肝脏 ROI 裁剪后的尺寸分布，确认 patch 能覆盖大多数 ROI
     diag.log_roi_stats(tr, tag="train", max_cases=10, tumor_label=2)
@@ -657,10 +696,10 @@ def main():
             val_ds,
             batch_size=1,
             shuffle=False,
-            num_workers=args.num_workers,
+            num_workers=min(args.num_workers, 4),  # 验证集小，不需要全部 workers
             pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=args.prefetch_factor,
+            persistent_workers=False,  # val_every>1 时 workers 空转浪费 CPU，按需启动
+            prefetch_factor=2,
         )
     else:
         train_loader = DataLoader(
@@ -683,7 +722,8 @@ def main():
 
     torch._dynamo.config.suppress_errors = True  # 保险:编译失败不崩溃
 
-    model = torch.compile(model)  # 自动优化计算图，首epoch编译慢，之后每epoch提速10~30%
+    # reduce-overhead: 减少 Python 调度开销，对固定 patch 尺寸效果好，首次慢但后续更快
+    model = torch.compile(model, mode="reduce-overhead")
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     if args.learnable_loss:
         criterion = LearnableWeightedLoss(base_loss_type=args.loss).to(device)
@@ -694,6 +734,10 @@ def main():
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     scaler = torch.cuda.amp.GradScaler() if args.amp and device == "cuda" else None
+
+    # 提前构建 loss_fn，避免每 epoch 重建（节省少量 Python 开销）
+    from medseg.engine.train_eval import build_loss_fn_binary
+    _loss_fn = build_loss_fn_binary(args.loss) if not args.learnable_loss else None
 
     start_epoch = 1
     best = -1.0
@@ -727,7 +771,7 @@ def main():
     logger = TrainLoggerTwoStage(workdir)
 
     print(f"[tumor stage2] workdir: {workdir}")
-    print(f"[tumor stage2] train={len(tr)} val={len(va)} test={len(te)}")
+    print(f"[tumor stage2] train={len(tr)} monitor={len(va)} test={len(te)}")
     print(f"[tumor stage2] device={device} model={args.model}")
 
     wall_start = time.time()
@@ -745,7 +789,7 @@ def main():
                 epochs=args.epochs,
             )
         else:
-            train_loss = train_one_epoch_sigmoid_binary(  # 原有代码完全不变
+            train_loss = train_one_epoch_sigmoid_binary(
                 model=model,
                 loader=train_loader,
                 optimizer=optimizer,
@@ -754,6 +798,7 @@ def main():
                 loss_type=args.loss,
                 epoch=epoch,
                 epochs=args.epochs,
+                loss_fn=_loss_fn,  # 复用预建的 loss_fn，避免每 epoch 重建
             )
 
         val_tumor_dice = None
@@ -822,7 +867,7 @@ def main():
         "best_epoch": int(best_epoch),
         "epochs": int(args.epochs),
         "n_train_cases": len(tr),
-        "n_val_cases": len(va),
+        "n_monitor_cases": len(va),
         "total_train_hours": round(total_sec / 3600.0, 2),
     }
     diag.log_final(

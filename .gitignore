@@ -92,3 +92,4 @@ checkpoints/
 
 cache/
 tmp/
+.aider*

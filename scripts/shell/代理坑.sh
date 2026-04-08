@@ -18,12 +18,6 @@ Claude Code 无GUI服务器配置完整指南
 第一部分:排查代理问题
 ============================================================
 
-⚠️ 坑1:用 curl 访问 Clash API(9090端口)时返回空或502
-原因:系统设置了 http_proxy 环境变量,curl 访问本地9090也走了代理,代理转发9090失败
-错误命令(会走代理,返回空):
-  curl -s http://127.0.0.1:9090/proxies
-✅ 正确命令(加 --noproxy 绕过代理):
-  curl -s --noproxy '*' http://127.0.0.1:9090/proxies
 
 ⚠️ 坑2:Clash API 有 secret 时需要加 Bearer token
 先查 secret:
@@ -35,6 +29,7 @@ Claude Code 无GUI服务器配置完整指南
 ⚠️ 坑3:节点 "alive: false" 但面板显示已选中
 查看节点状态(重要！):
   curl -s --noproxy '*' http://127.0.0.1:9090/proxies/AI | python3 -m json.tool
+  
 看 "alive" 字段,false = 节点已挂,换节点没用,要换机场
 
 ⚠️ 坑4:TLS reset 不是 Clash 的问题,是节点的问题

@@ -66,11 +66,13 @@ def save_case_visualization(
     tumor_full: torch.Tensor,  # [D,H,W]
     final_pred: torch.Tensor,  # [D,H,W]
     case_name: str,
+    liver_filled: torch.Tensor | None = None,  # [D,H,W] bool, 孔洞填充后的肝脏
 ) -> None:
     """
     保存 one-case 可视化:
     行 = axial/coronal/sagittal
-    列 = image / gt / liver_pred / tumor_pred / final_pred
+    列 = image / gt / stage1_liver / [liver_filled] / stage2_tumor / final_pred
+    liver_filled 不为 None 时额外显示一列
     """
     image3d = image[0].cpu()
     gt3d = label[0].cpu() if label is not None else None
@@ -85,32 +87,43 @@ def save_case_visualization(
     tumor_views = get_views(tumor_full, idxs)
     final_views = get_views(final_pred, idxs)
 
-    row_names = ["axial", "coronal", "sagittal"]
-    col_names = ["image", "gt", "stage1_liver", "stage2_tumor", "final_pred"]
+    show_filled = liver_filled is not None
+    if show_filled:
+        filled_views = get_views(liver_filled.cpu().long(), idxs)
 
-    fig, axes = plt.subplots(3, 5, figsize=(18, 10))
+    row_names = ["axial", "coronal", "sagittal"]
+    col_names = ["image", "gt", "stage1_liver"]
+    if show_filled:
+        col_names.append("liver_filled")
+    col_names += ["stage2_tumor", "final_pred"]
+
+    n_cols = len(col_names)
+    fig, axes = plt.subplots(3, n_cols, figsize=(3.6 * n_cols, 10))
 
     for r in range(3):
-        for c in range(5):
+        for c in range(n_cols):
             ax = axes[r, c]
             ax.axis("off")
+            col_name = col_names[c]
 
-            if c == 0:
+            if col_name == "image":
                 ax.imshow(img_views[r], cmap="gray")
-            elif c == 1:
+            elif col_name == "gt":
                 if gt_views[r] is not None:
                     ax.imshow(gt_views[r], cmap="gray", vmin=0, vmax=2)
                 else:
                     ax.text(0.5, 0.5, "No GT", ha="center", va="center")
-            elif c == 2:
+            elif col_name == "stage1_liver":
                 ax.imshow(liver_views[r], cmap="gray", vmin=0, vmax=1)
-            elif c == 3:
+            elif col_name == "liver_filled":
+                ax.imshow(filled_views[r], cmap="gray", vmin=0, vmax=1)
+            elif col_name == "stage2_tumor":
                 ax.imshow(tumor_views[r], cmap="gray", vmin=0, vmax=1)
-            elif c == 4:
+            elif col_name == "final_pred":
                 ax.imshow(final_views[r], cmap="gray", vmin=0, vmax=2)
 
             if r == 0:
-                ax.set_title(col_names[c], fontsize=11)
+                ax.set_title(col_name, fontsize=11)
             if c == 0:
                 ax.set_ylabel(row_names[r], fontsize=11)
 
