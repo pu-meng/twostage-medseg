@@ -42,6 +42,7 @@ from medseg.data.dataset_offline import split_two_with_monitor
 from metrics.filter import filter_largest_component
 from metrics.metrics_utils import compute_metrics, summarize_metrics_list
 from twostage.vis_utils import save_case_visualization
+from 展示.vis_prob import vis_worst_cases
 
 
 def add_medseg_to_syspath(medseg_root: str) -> None:
@@ -121,6 +122,13 @@ def parse_args():
         help="开启后额外计算用孔洞填充后肝脏(liver_filled)的liver dice,并在可视化中新增一列展示",
     )
     p.add_argument("--min_tumor_size", type=int, default=100)
+    p.add_argument(
+        "--comp_prob_thresh",
+        type=float,
+        default=0.5,
+        help="连通域自适应阈值：体积 < min_tumor_size 但平均概率 >= 此值时也保留（默认0.5）。"
+        "降低此值可以救回极小高置信度肿瘤，建议0.4~0.6。",
+    )
     p.add_argument(
         "--small_tumor_low_thresh",
         type=float,
@@ -359,11 +367,9 @@ def main():
                 i += 1
         f.write(" \\\n".join(lines) + "\n")
 
-    pred_dir = None
-    if args.save_pred_pt:
-        pred_dir = os.path.join(workdir, "pred_pt")
-        os.makedirs(pred_dir, exist_ok=True)
+    prob_dir = os.path.join(workdir, "prob_pt")  # 写磁盘前先攒内存，eval结束后只存最差N个
     vis_dir = os.path.join(workdir, "vis_png")
+    prob_buffer: dict = {}  # case_name -> prob2_full tensor，先全攒内存
     os.makedirs(vis_dir, exist_ok=True)
 
     all_pt = load_pt_paths(args.preprocessed_root)
@@ -639,6 +645,11 @@ def main():
                     }
                 )
                 # ─────────────────────────────────────────────────────────────
+                # 保存 prob map（paste回全图坐标系）
+                prob2_full = torch.zeros(pred1.shape, dtype=torch.float32)
+                prob2_full = paste_3d(prob2_full, prob2, bbox)
+                prob_buffer[case_name] = prob2_full.clone()  # 先攒内存，eval结束后按dice过滤再写盘
+
                 pred2 = (prob2 > 0.3).long()  # [d,h,w]
 
                 # 小肿瘤激进后处理:若初始预测体积极小(200~1000 voxel),认为模型过于保守,
@@ -670,18 +681,26 @@ def main():
                 tumor_mask & liver_filled
             )  # 肿瘤只能在肝脏实心区域内(交集),排除肝外假阳性
 
-            # 用连通域分析去掉体积过小的碎片(< min_tumor_size 个 voxel 认为是噪声)
-            labeled, num = ndi.label(tumor_mask.cpu().numpy())  # type:ignore
-            # labeled: 每个连通域被标注为不同整数 ID(1,2,...,num)
-            # num: 连通域总数
+            # 连通域分析：自适应阈值
+            # 规则：体积 > min_tumor_size 直接保留；
+            #       体积 <= min_tumor_size 但连通域内平均概率 >= comp_prob_thresh 也保留
+            #       （救回极小高置信度肿瘤，同时过滤低概率FP碎片）
+            tumor_mask_np = tumor_mask.cpu().numpy()
+            prob2_full_np = prob2_full.numpy()
+            labeled, num = ndi.label(tumor_mask_np)
 
-            # 计算每个连通域的体积(voxel 数)
-            sizes = ndi.sum(tumor_mask.cpu().numpy(), labeled, range(1, num + 1))
+            sizes = ndi.sum(tumor_mask_np, labeled, range(1, num + 1))
 
             clean = torch.zeros_like(tumor_mask)
             for comp_idx, s in enumerate(sizes):
-                if s > args.min_tumor_size:  # 保留大于阈值的连通域(默认 50 voxels)
-                    clean[labeled == (comp_idx + 1)] = 1
+                comp_id = comp_idx + 1
+                if s > args.min_tumor_size:
+                    clean[labeled == comp_id] = 1
+                else:
+                    # 体积小：看平均概率决定是否保留
+                    mean_prob = float(prob2_full_np[labeled == comp_id].mean())
+                    if mean_prob >= args.comp_prob_thresh:
+                        clean[labeled == comp_id] = 1
 
             tumor_mask = clean.bool()
 
@@ -760,21 +779,6 @@ def main():
                     liver_filled=liver_filled if args.eval_liver_filled else None,
                 )
 
-            if pred_dir is not None:
-                # pred_dir由args.pred_dir指定,如果args.pred_dir为空,则pred_dir为None
-                # 这个是保存预测结果的,每个case一个.pt文件,这个是给程序保存的,后续可以加载进行分析,调试
-                torch.save(
-                    {
-                        "image": image,
-                        "label": label,
-                        "stage1_liver_pred": pred1.unsqueeze(0).long(),
-                        "stage1_liver_filled": liver_filled.unsqueeze(0).long(),
-                        "stage2_tumor_pred": tumor_full.unsqueeze(0).long(),
-                        "final_pred": final_pred.unsqueeze(0).long(),
-                        "meta": row,
-                    },
-                    os.path.join(pred_dir, f"{case_name}_twostage.pt"),
-                )
 
             msg = f"[{case_idx}/{len(pt_paths)}] {case_name}"
             if "liver_dice" in row:
@@ -969,6 +973,20 @@ def main():
                     f"{d['vox_01']:>9,} {d['vox_03']:>9,} {d['vox_05']:>9,}\n"
                 )
             f.write("\n")
+
+    # prob_pt：只保存 tumor_dice 最低的 N 个 case
+    N_SAVE_PROB = 5
+    sorted_rows = sorted(rows, key=lambda r: float(r.get("tumor_dice", 1.0)))
+    os.makedirs(prob_dir, exist_ok=True)
+    for r in sorted_rows[:N_SAVE_PROB]:
+        cname = r["case_name"]
+        if cname in prob_buffer:
+            torch.save(prob_buffer[cname], os.path.join(prob_dir, f"{cname}_prob.pt"))
+    prob_buffer.clear()
+    print(f"[prob_pt] saved worst {min(N_SAVE_PROB, len(sorted_rows))} cases to {prob_dir}")
+
+    # visualize worst 3 cases by tumor_dice
+    vis_worst_cases(workdir, rows, n_worst=3, preprocessed_root=args.preprocessed_root)
 
     print("\n===== Final Metrics =====")
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
