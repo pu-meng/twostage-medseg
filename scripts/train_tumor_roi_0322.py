@@ -25,7 +25,7 @@ from medseg.engine.adaptive_loss import (
     LearnableWeightedLoss,
 )
 
-from metrics.DiagLogger import DiagLogger
+from twostage_medseg.metrics.DiagLogger import DiagLogger
 from medseg.utils.ckpt import (
     load_ckpt_full,
     save_ckpt_full,
@@ -34,9 +34,9 @@ from medseg.utils.ckpt import (
 from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
 from medseg.utils.train_utils import set_seed
-from twostage.train_logger import TrainLoggerTwoStage
-from twostage.dataset_tumor_roi_0322 import TumorROIDataset
-from twostage.train_eval_tumor import tumor_metrics_from_val_result
+from twostage_medseg.twostage.train_logger import TrainLoggerTwoStage
+from twostage_medseg.twostage.dataset_tumor_roi_0322 import TumorROIDataset
+from twostage_medseg.twostage.train_eval_tumor import tumor_metrics_from_val_result
 
 """
 os.path.abspath(medseg_root)

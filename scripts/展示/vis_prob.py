@@ -7,7 +7,8 @@ Or import vis_worst_cases() for use in eval_twostage.py
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+import os
+import csv
 from pathlib import Path
 
 
@@ -204,7 +205,8 @@ if __name__ == "__main__":
     N_WORST            = None    # if set, only process the N worst cases (overrides DICE_THRESHOLD)
     # ================================
 
-    import csv, os
+    import csv
+    import os
     eval_dir = Path(EVAL_DIR)
     prob_dir = eval_dir / "prob_pt"
     vis_dir  = eval_dir / "vis_prob"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from metrics.filter import filter_largest_component
+from twostage_medseg.metrics.filter import filter_largest_component
 from typing import Any
 from typing import Sequence
 import torch
@@ -70,6 +70,8 @@ class TumorROIDataset(Dataset):
         # 训练时用 GT liver mask 作第二通道，推理时换成 Stage1 预测
         use_coarse_tumor: bool = False,  # 是否启用粗糙肿瘤通道(Ch1=CT, Ch2=Stage1粗糙肿瘤mask)
         # 需要 pred_bboxes 为新格式(含 tumor bbox)
+        small_tumor_zoom_thresh: int = 0,   # 小肿瘤 zoom-in 阈值(体素数)，0=关闭
+        small_tumor_zoom_factor: float = 2.0,  # zoom-in 倍率，2.0=放大2倍
     ) -> None:
         self.pt_paths = [str(p) for p in pt_paths]
         self.transform = transform
@@ -89,6 +91,8 @@ class TumorROIDataset(Dataset):
         self.pred_bboxes = pred_bboxes
         self.two_channel = bool(two_channel)
         self.use_coarse_tumor = bool(use_coarse_tumor)
+        self.small_tumor_zoom_thresh = int(small_tumor_zoom_thresh)
+        self.small_tumor_zoom_factor = float(small_tumor_zoom_factor)
 
         # 基本合法性校验
         if len(self.pt_paths) == 0:
@@ -320,6 +324,44 @@ class TumorROIDataset(Dataset):
             bbox = self._jitter_bbox(bbox, spatial_shape=tuple(label.shape[1:]))
             image_roi = crop_3d(image, bbox)
             label_roi = crop_3d(label, bbox)
+
+        # ── Zoom-in：对小肿瘤 case 缩小 ROI 物理范围，等价于放大肿瘤 ──────────
+        # 仅在训练时生效（transform不为None），推理时不做
+        # 判断是否为小肿瘤：GT肿瘤体素数 < small_tumor_zoom_thresh
+        # 做法：以肿瘤中心为中心，取原ROI的 1/zoom_factor 大小的子区域，
+        #       再用插值resize回原ROI尺寸，等价于放大zoom_factor倍
+        if (
+            self.transform is not None
+            and self.small_tumor_zoom_thresh > 0
+            and self.small_tumor_zoom_factor > 1.0
+        ):
+            n_tumor = int((label_roi == 2).sum().item())
+            if 0 < n_tumor < self.small_tumor_zoom_thresh:
+                # 肿瘤中心坐标（在ROI坐标系内）
+                coords = torch.nonzero(label_roi[0] == 2, as_tuple=False).float()
+                center = coords.mean(dim=0)  # [D, H, W] 方向
+                d, h, w = image_roi.shape[1], image_roi.shape[2], image_roi.shape[3]
+                # 缩小后的子区域大小
+                sd = max(1, int(round(d / self.small_tumor_zoom_factor)))
+                sh = max(1, int(round(h / self.small_tumor_zoom_factor)))
+                sw = max(1, int(round(w / self.small_tumor_zoom_factor)))
+                # 子区域起止，以肿瘤中心为中心，clamp保证不越界
+                z0 = int(torch.clamp(center[0] - sd // 2, 0, d - sd).item())
+                y0 = int(torch.clamp(center[1] - sh // 2, 0, h - sh).item())
+                x0 = int(torch.clamp(center[2] - sw // 2, 0, w - sw).item())
+                # 裁出子区域
+                image_roi = image_roi[:, z0:z0+sd, y0:y0+sh, x0:x0+sw]
+                label_roi = label_roi[:, z0:z0+sd, y0:y0+sh, x0:x0+sw]
+                # 插值回原始ROI尺寸
+                image_roi = torch.nn.functional.interpolate(
+                    image_roi.unsqueeze(0).float(), size=(d, h, w),
+                    mode="trilinear", align_corners=False
+                ).squeeze(0)
+                label_roi = torch.nn.functional.interpolate(
+                    label_roi.unsqueeze(0).float(), size=(d, h, w),
+                    mode="nearest"
+                ).squeeze(0).long()
+        # ─────────────────────────────────────────────────────────────────────
 
         tumor_roi = (label_roi == 2).long()
 

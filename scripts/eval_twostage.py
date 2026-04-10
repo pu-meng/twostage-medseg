@@ -39,10 +39,10 @@ from medseg.utils.ckpt import load_ckpt
 from medseg.data.dataset_offline import split_two_with_monitor
 
 # twostage_medseg/metrics/filter.py
-from metrics.filter import filter_largest_component
-from metrics.metrics_utils import compute_metrics, summarize_metrics_list
-from twostage.vis_utils import save_case_visualization
-from 展示.vis_prob import vis_worst_cases
+from twostage_medseg.metrics.filter import filter_largest_component
+from twostage_medseg.metrics.metrics_utils import compute_metrics, summarize_metrics_list
+from twostage_medseg.twostage.vis_utils import save_case_visualization
+from twostage_medseg.scripts.展示.vis_prob import vis_worst_cases
 
 
 def add_medseg_to_syspath(medseg_root: str) -> None:

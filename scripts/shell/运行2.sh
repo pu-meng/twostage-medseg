@@ -131,6 +131,24 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 # 数据划分: split_two_with_monitor (与训练一致, test=nnUNet fold0 19个case)
 # ============================================================
 
+# ============================================================
+# 实验十一 eval — 自适应连通域阈值测试
+# 新增 --comp_prob_thresh 0.4：体积小但高置信度的连通域也保留
+# ============================================================
+
+# CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
+#   --medseg_root /home/pumengyu/medseg_project \
+#   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+#   --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+#   --stage2_ckpt /home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+#   --stage1_model dynunet --stage2_model dynunet \
+#   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \
+#   --stage2_sw_batch_size 1 \
+#   --overlap 0.25 --margin 8 \
+#   --small_tumor_low_thresh 0.2 \
+#   --comp_prob_thresh 0.4 \
+#   --split test
+
 CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
   --medseg_root /home/pumengyu/medseg_project \
   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
@@ -142,3 +160,51 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
   --overlap 0.25 --margin 8 \
   --small_tumor_low_thresh 0.2 \
   --split test
+
+============================================================
+实验十二 — dynunet_focaltversky_smallmine_zoom_p128
+在实验十一基础上增加 small_tumor_zoom_in：
+  小肿瘤(< 5000 vox)训练时ROI放大2倍，增强空间特征学习
+init_ckpt: 实验十一 best.pt
+============================================================
+
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root /home/pumengyu/medseg_project \
+  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --exp_root /home/pumengyu/experiments/twostage \
+  --exp_name dynunet_focaltversky_smallmine_zoom_p128 \
+  --model dynunet \
+  --epochs 150 \
+  --batch_size 3 \
+  --lr 1e-4 \
+  --patch 128 128 128 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 1 \
+  --val_every 3 \
+  --num_workers 10 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss focaltversky \
+  --val_overlap 0.25 \
+  --repeats 8 \
+  --tumor_ratios 0.02 0.98 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_min 8 \
+  --margin_max 20 \
+  --use_pred_bbox \
+  --small_tumor_thresh 5000 \
+  --small_tumor_repeat_scale 4 \
+  --no_tumor_repeat_scale 2 \
+  --large_tumor_thresh 50000 \
+  --large_tumor_repeat_scale 3 \
+  --small_tumor_zoom_thresh 5000 \
+  --small_tumor_zoom_factor 2.0 \
+  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_patch 144 144 144 \
+  --stage1_model dynunet \
+  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+  --seed 42

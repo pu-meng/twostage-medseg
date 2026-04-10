@@ -9,12 +9,12 @@ from datetime import datetime
 import warnings as _w
 from pathlib import Path as _Path
 from monai.inferers.utils import sliding_window_inference
-from metrics.filter import filter_largest_component
-from twostage.roi_utils import compute_bbox_from_mask
+from twostage_medseg.metrics.filter import filter_largest_component
+from twostage_medseg.twostage.roi_utils import compute_bbox_from_mask
 
 import torch
 from torch.utils.data import DataLoader
-from monai.data import list_data_collate
+from monai.data.utils import list_data_collate
 from medseg.data.dataset_offline import load_pt_paths, split_two_with_monitor
 from medseg.data.transforms_offline import (
     build_train_transforms,
@@ -31,7 +31,7 @@ from medseg.engine.adaptive_loss import (
     LearnableWeightedLoss,
 )
 
-from metrics.DiagLogger import DiagLogger
+from twostage_medseg.metrics.DiagLogger import DiagLogger
 from medseg.utils.ckpt import (
     load_ckpt_full,
     save_ckpt_full,
@@ -40,9 +40,9 @@ from medseg.utils.ckpt import (
 from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
 from medseg.utils.train_utils import set_seed
-from twostage.train_logger import TrainLoggerTwoStage
-from twostage.dataset_tumor_roi import TumorROIDataset
-from twostage.train_eval_tumor import tumor_metrics_from_val_result
+from twostage_medseg.twostage.train_logger import TrainLoggerTwoStage
+from twostage_medseg.twostage.dataset_tumor_roi import TumorROIDataset
+from twostage_medseg.twostage.train_eval_tumor import tumor_metrics_from_val_result
 
 """
 os.path.abspath(medseg_root)
@@ -231,6 +231,18 @@ def parse_args():
         type=int,
         default=3,
         help="大肿瘤 case 的 repeat 倍率",
+    )
+    p.add_argument(
+        "--small_tumor_zoom_thresh",
+        type=int,
+        default=0,
+        help="小肿瘤 zoom-in 阈值(体素数)：肿瘤体素数 < 此值时做 zoom-in 放大，0=关闭。建议值 5000。",
+    )
+    p.add_argument(
+        "--small_tumor_zoom_factor",
+        type=float,
+        default=2.0,
+        help="zoom-in 放大倍率，2.0=放大2倍（ROI物理范围缩小一半）。",
     )
 
     p.add_argument(
@@ -651,6 +663,8 @@ def main():
         pred_bboxes=pred_bboxes_train,  # None 时行为与之前完全一致
         two_channel=args.two_channel,
         use_coarse_tumor=args.use_coarse_tumor,
+        small_tumor_zoom_thresh=args.small_tumor_zoom_thresh,
+        small_tumor_zoom_factor=args.small_tumor_zoom_factor,
     )
 
     # --total_steps：自动反推 epochs，对齐不同 repeats/scale 实验的训练量

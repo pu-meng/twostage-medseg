@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from metrics.filter import filter_largest_component
+from twostage_medseg.metrics.filter import filter_largest_component
 from typing import Any
 from typing import Sequence
 import torch
