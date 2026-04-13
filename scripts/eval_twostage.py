@@ -123,6 +123,18 @@ def parse_args():
     )
     p.add_argument("--min_tumor_size", type=int, default=100)
     p.add_argument(
+        "--prob_threshold",
+        type=float,
+        default=0.3,
+        help="Stage2 概率图转二值mask的阈值（默认0.3）。提高可减少FP，降低可救回小肿瘤。",
+    )
+    p.add_argument(
+        "--no_postprocess",
+        action="store_true",
+        help="关闭所有后处理（肝脏约束/fill holes/连通域过滤/small_tumor_low_thresh），"
+        "仅用 prob_threshold 做二值化，直接paste回全图评估裸模型性能。",
+    )
+    p.add_argument(
         "--comp_prob_thresh",
         type=float,
         default=0.5,
@@ -255,7 +267,7 @@ def build_final_pred_from_liver_tumor(
     liver_mask: torch.Tensor,
     tumor_mask: torch.Tensor,
     use_filled_liver: bool = True,
-    liver_filled: torch.Tensor = None,
+    liver_filled: torch.Tensor = None,  #type: ignore
 ) -> torch.Tensor:
     """
     output:
@@ -300,7 +312,7 @@ def tta_sliding_window_inference(inputs, roi_size, sw_batch_size, predictor, ove
     for flip_axes in flip_combinations:
         x = torch.flip(inputs, dims=flip_axes) if flip_axes else inputs
         logits = sliding_window_inference(
-            x, roi_size, sw_batch_size, predictor, overlap
+            x, roi_size, sw_batch_size, predictor, overlap, mode="gaussian"
         )
         if isinstance(logits, (tuple, list)):
             logits = logits[0]
@@ -310,7 +322,7 @@ def tta_sliding_window_inference(inputs, roi_size, sw_batch_size, predictor, ove
             logits = torch.flip(logits, dims=flip_axes)
         logits_sum = logits if logits_sum is None else logits_sum + logits
 
-    return logits_sum / len(flip_combinations)
+    return logits_sum / len(flip_combinations)  #type: ignore
 
 
 def main():
@@ -367,9 +379,7 @@ def main():
                 i += 1
         f.write(" \\\n".join(lines) + "\n")
 
-    prob_dir = os.path.join(workdir, "prob_pt")  # 写磁盘前先攒内存，eval结束后只存最差N个
     vis_dir = os.path.join(workdir, "vis_png")
-    prob_buffer: dict = {}  # case_name -> prob2_full tensor，先全攒内存
     os.makedirs(vis_dir, exist_ok=True)
 
     all_pt = load_pt_paths(args.preprocessed_root)
@@ -500,6 +510,7 @@ def main():
                         sw_batch_size=args.stage1_sw_batch_size,  # 同时推理的 patch 数,越大越占显存
                         predictor=stage1,  # Stage1 肝脏分割模型
                         overlap=args.overlap,  # patch 间重叠比例,越大越精确但越慢
+                        mode="gaussian",
                     )
                 # logits1: [1,2,D,H,W],2个通道分别是"背景"和"肝脏"的未归一化分数
 
@@ -588,8 +599,9 @@ def main():
                             inputs=x_roi,  # 肝脏 ROI [1,1,d,h,w]
                             roi_size=tuple(args.stage2_patch),  # 如 [96,96,96]
                             sw_batch_size=args.stage2_sw_batch_size,
-                            predictor=stage2,  # Stage2 肿瘤分割模型 A
+                            predictor=stage2,  # Stage2 肿瘤分割模型 A  #type:ignore
                             overlap=args.overlap,
+                            mode="gaussian",
                         )
                     # logits2: [1,2,d,h,w],2个通道分别是"背景"和"肿瘤"的分数
 
@@ -611,6 +623,7 @@ def main():
                                 sw_batch_size=args.stage2_sw_batch_size,
                                 predictor=stage2_b,  # Stage2 肿瘤分割模型 B
                                 overlap=args.overlap,
+                                mode="gaussian",
                             )
 
                 if isinstance(logits2, (tuple, list)):
@@ -645,15 +658,15 @@ def main():
                     }
                 )
                 # ─────────────────────────────────────────────────────────────
-                # 保存 prob map（paste回全图坐标系）
+                # prob map paste回全图坐标系（用于连通域后处理，不写盘）
                 prob2_full = torch.zeros(pred1.shape, dtype=torch.float32)
                 prob2_full = paste_3d(prob2_full, prob2, bbox)
-                prob_buffer[case_name] = prob2_full.clone()  # 先攒内存，eval结束后按dice过滤再写盘
-
-                pred2 = (prob2 > 0.3).long()  # [d,h,w]
+#args.prob_threshold是置信度高于这个的才被判断为肿瘤
+                pred2 = (prob2 > args.prob_threshold).long()  # [d,h,w]
 
                 # 小肿瘤激进后处理:若初始预测体积极小(200~1000 voxel),认为模型过于保守,
-                # 用更低阈值重新生成预测,允许多倍体积扩张以暴力覆盖住小肿瘤
+                # 用更低阈值重新生成预测,允许多倍体积扩张以暴力覆盖住小肿瘤,
+                #args.small_tumor_low_thresh=0则关闭
                 _pred_vol = int(pred2.sum().item())
                 if args.small_tumor_low_thresh > 0 and 200 <= _pred_vol <= 1000:
                     pred2 = (prob2 > args.small_tumor_low_thresh).long()
@@ -667,42 +680,47 @@ def main():
             # 后处理:约束肿瘤在肝脏内,去除小假阳性连通域
             # ================================================================
             tumor_mask = tumor_full == 1  # [D,H,W] bool,Stage2 预测的肿瘤位置
-            # 肝脏是实心器官，内部不应有空洞(高密度肿瘤会导致 Stage1 在肿瘤处预测出空洞）
-            # 填充 liver_mask 的内部空洞，确保肝脏轮廓内部全部为实心区域
-            # binary_fill_holes 3D 对开口空洞无效，改为逐 slice 2D 填充取三轴并集
-            liver_np = liver_mask.cpu().numpy()
-            filled_ax0 = np.stack([ndi.binary_fill_holes(liver_np[i]) for i in range(liver_np.shape[0])])
-            filled_ax1 = np.stack([ndi.binary_fill_holes(liver_np[:, i, :]) for i in range(liver_np.shape[1])]).transpose(1, 0, 2)
-            filled_ax2 = np.stack([ndi.binary_fill_holes(liver_np[:, :, i]) for i in range(liver_np.shape[2])]).transpose(1, 2, 0)
-            liver_filled = torch.from_numpy(
-                filled_ax0 | filled_ax1 | filled_ax2
-            ).to(liver_mask.device)
-            tumor_mask = (
-                tumor_mask & liver_filled
-            )  # 肿瘤只能在肝脏实心区域内(交集),排除肝外假阳性
 
-            # 连通域分析：自适应阈值
-            # 规则：体积 > min_tumor_size 直接保留；
-            #       体积 <= min_tumor_size 但连通域内平均概率 >= comp_prob_thresh 也保留
-            #       （救回极小高置信度肿瘤，同时过滤低概率FP碎片）
-            tumor_mask_np = tumor_mask.cpu().numpy()
-            prob2_full_np = prob2_full.numpy()
-            labeled, num = ndi.label(tumor_mask_np)
+            if args.no_postprocess:
+                # 裸模型评估：跳过肝脏约束/fill holes/连通域过滤
+                liver_filled = liver_mask  # 占位，build_final_pred需要
+            else:
+                # 肝脏是实心器官，内部不应有空洞(高密度肿瘤会导致 Stage1 在肿瘤处预测出空洞）
+                # 填充 liver_mask 的内部空洞，确保肝脏轮廓内部全部为实心区域
+                # binary_fill_holes 3D 对开口空洞无效，改为逐 slice 2D 填充取三轴并集
+                liver_np = liver_mask.cpu().numpy()
+                filled_ax0 = np.stack([ndi.binary_fill_holes(liver_np[i]) for i in range(liver_np.shape[0])])#type: ignore
+                filled_ax1 = np.stack([ndi.binary_fill_holes(liver_np[:, i, :]) for i in range(liver_np.shape[1])]).transpose(1, 0, 2)#type: ignore
+                filled_ax2 = np.stack([ndi.binary_fill_holes(liver_np[:, :, i]) for i in range(liver_np.shape[2])]).transpose(1, 2, 0)#type: ignore
+                liver_filled = torch.from_numpy(
+                    filled_ax0 | filled_ax1 | filled_ax2
+                ).to(liver_mask.device)
+                tumor_mask = (
+                    tumor_mask & liver_filled
+                )  # 肿瘤只能在肝脏实心区域内(交集),排除肝外假阳性
 
-            sizes = ndi.sum(tumor_mask_np, labeled, range(1, num + 1))
+                # 连通域分析：自适应阈值
+                # 规则：体积 > min_tumor_size 直接保留；
+                #       体积 <= min_tumor_size 但连通域内平均概率 >= comp_prob_thresh 也保留
+                #       （救回极小高置信度肿瘤，同时过滤低概率FP碎片）
+                tumor_mask_np = tumor_mask.cpu().numpy()
+                prob2_full_np = prob2_full.numpy()
+                labeled, num = ndi.label(tumor_mask_np) #type: ignore
 
-            clean = torch.zeros_like(tumor_mask)
-            for comp_idx, s in enumerate(sizes):
-                comp_id = comp_idx + 1
-                if s > args.min_tumor_size:
-                    clean[labeled == comp_id] = 1
-                else:
-                    # 体积小：看平均概率决定是否保留
-                    mean_prob = float(prob2_full_np[labeled == comp_id].mean())
-                    if mean_prob >= args.comp_prob_thresh:
-                        clean[labeled == comp_id] = 1
+                sizes = ndi.sum(tumor_mask_np, labeled, range(1, num + 1))
 
-            tumor_mask = clean.bool()
+                clean = torch.zeros_like(tumor_mask)
+                for comp_idx, s in enumerate(sizes):
+                    comp_id = comp_idx + 1
+                    if s > args.min_tumor_size:
+                        clean[labeled == comp_id] = 1  #直接保留
+                    else:
+                        # 体积小：看平均概率和comp_prob_thresh的大小关系决定是否保留
+                        mean_prob = float(prob2_full_np[labeled == comp_id].mean())
+                        if mean_prob >= args.comp_prob_thresh:
+                            clean[labeled == comp_id] = 1
+
+                tumor_mask = clean.bool()
 
             # ================================================================
             # 合并最终预测:0=背景,1=肝脏,2=肿瘤
@@ -711,7 +729,7 @@ def main():
             final_pred = build_final_pred_from_liver_tumor(
                 liver_mask=liver_mask,
                 tumor_mask=tumor_mask,
-                use_filled_liver=True,
+                use_filled_liver=not args.no_postprocess,
                 liver_filled=liver_filled,
             )
             pt_path = os.path.basename(pt_path)
@@ -758,13 +776,13 @@ def main():
                 else:
                     row["tumor_size_cat"] = "大(>=300k)"
 
-                liver_metrics_list.append(liver_metrics)
+                liver_metrics_list.append(liver_metrics)#type: ignore
                 if args.eval_liver_filled:
-                    liver_filled_metrics_list.append(liver_filled_metrics)
+                    liver_filled_metrics_list.append(liver_filled_metrics)#type: ignore
                 if gt_tumor.any().item():
-                    tumor_metrics_list.append(tumor_metrics)  # 有肿瘤 case
+                    tumor_metrics_list.append(tumor_metrics) #type: ignore # 有肿瘤 case
                 else:
-                    tumor_metrics_list_neg.append(tumor_metrics)  # 无肿瘤 case
+                    tumor_metrics_list_neg.append(tumor_metrics)#type: ignore  # 无肿瘤 case
 
             rows.append(row)
             if args.vis_all or case_idx <= args.vis_n:
@@ -828,17 +846,17 @@ def main():
         "n_cases": len(rows),
         "device": device,
         "elapsed_hours": round(elapsed_hours, 3),
-        "liver": summarize_metrics_list(liver_metrics_list, ["Dice"]),
-        "liver_filled": summarize_metrics_list(liver_filled_metrics_list, ["Dice"])
+        "liver": summarize_metrics_list(liver_metrics_list, ["Dice"]), #type: ignore
+        "liver_filled": summarize_metrics_list(liver_filled_metrics_list, ["Dice"]) #type: ignore   
         if liver_filled_metrics_list
         else None,
         # 有肿瘤 case：主指标，对齐 nnUNet 报告口径
         "tumor_pos": summarize_metrics_list(
-            tumor_metrics_list, ["Dice", "Jaccard", "Recall", "FDR", "FNR", "Precision"]
+            tumor_metrics_list, ["Dice", "Jaccard", "Recall", "FDR", "FNR", "Precision"] #type: ignore
         ),
         # 无肿瘤 case：统计误报率(FP rate)，模型把无肿瘤预测成有肿瘤的比例
         "tumor_neg_false_positive_rate": round(
-            sum(1 for m in tumor_metrics_list_neg if m["FP"] > 0)
+            sum(1 for m in tumor_metrics_list_neg if m["FP"] > 0) #type: ignore
             / max(1, len(tumor_metrics_list_neg)),
             4,
         )
@@ -974,16 +992,6 @@ def main():
                 )
             f.write("\n")
 
-    # prob_pt：只保存 tumor_dice 最低的 N 个 case
-    N_SAVE_PROB = 5
-    sorted_rows = sorted(rows, key=lambda r: float(r.get("tumor_dice", 1.0)))
-    os.makedirs(prob_dir, exist_ok=True)
-    for r in sorted_rows[:N_SAVE_PROB]:
-        cname = r["case_name"]
-        if cname in prob_buffer:
-            torch.save(prob_buffer[cname], os.path.join(prob_dir, f"{cname}_prob.pt"))
-    prob_buffer.clear()
-    print(f"[prob_pt] saved worst {min(N_SAVE_PROB, len(sorted_rows))} cases to {prob_dir}")
 
     # visualize worst 3 cases by tumor_dice
     vis_worst_cases(workdir, rows, n_worst=3, preprocessed_root=args.preprocessed_root)

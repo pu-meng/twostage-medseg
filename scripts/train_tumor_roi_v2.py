@@ -8,41 +8,41 @@ import time
 from datetime import datetime
 import warnings as _w
 from pathlib import Path as _Path
-from monai.inferers.utils import sliding_window_inference
-from twostage_medseg.metrics.filter import filter_largest_component
-from twostage_medseg.twostage.roi_utils import compute_bbox_from_mask
+from monai.inferers.utils import sliding_window_inference  # type: ignore
+from twostage_medseg.metrics.filter import filter_largest_component  # type: ignore
+from twostage_medseg.twostage.roi_utils import compute_bbox_from_mask  # type: ignore
 
 import torch
 from torch.utils.data import DataLoader
-from monai.data.utils import list_data_collate
-from medseg.data.dataset_offline import load_pt_paths, split_three_ways
-from medseg.data.transforms_offline import (
+from monai.data.utils import list_data_collate  # type: ignore
+from medseg.data.dataset_offline import load_pt_paths, split_three_ways  # type: ignore
+from medseg.data.transforms_offline import (  # type: ignore
     build_train_transforms,
     build_val_transforms,
 )
-from medseg.engine.train_eval import (
+from medseg.engine.train_eval import (  # type: ignore
     train_one_epoch_sigmoid_binary,
     validate_sliding_window,
 )
-from medseg.models.build_model import build_model
+from medseg.models.build_model import build_model  # type: ignore
 
-from medseg.engine.adaptive_loss import (
+from medseg.engine.adaptive_loss import (  # type: ignore
     train_one_epoch_binary_learnable,
     LearnableWeightedLoss,
 )
 
-from twostage_medseg.metrics.DiagLogger import DiagLogger
-from medseg.utils.ckpt import (
+from twostage_medseg.metrics.DiagLogger import DiagLogger  # type: ignore
+from medseg.utils.ckpt import (  # type: ignore
     load_ckpt_full,
     save_ckpt_full,
 )
 
-from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
+from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report  # type: ignore
 
-from medseg.utils.train_utils import set_seed
-from twostage_medseg.twostage.train_logger import TrainLoggerTwoStage
-from twostage_medseg.twostage.dataset_tumor_roi import TumorROIDataset
-from twostage_medseg.twostage.train_eval_tumor import tumor_metrics_from_val_result
+from medseg.utils.train_utils import set_seed  # type: ignore
+from twostage_medseg.twostage.train_logger import TrainLoggerTwoStage  # type: ignore
+from twostage_medseg.twostage.dataset_tumor_roi import TumorROIDataset  # type: ignore
+from twostage_medseg.twostage.train_eval_tumor import tumor_metrics_from_val_result  # type: ignore
 
 """
 os.path.abspath(medseg_root)
@@ -631,7 +631,7 @@ def main():
         args.model, in_channels=1, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
 
-    torch._dynamo.config.suppress_errors = True  # 保险:编译失败不崩溃
+    torch._dynamo.config.suppress_errors = True  #type: ignore # 保险:编译失败不崩溃
 
     model = torch.compile(model)  # 自动优化计算图，首epoch编译慢，之后每epoch提速10~30%
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)

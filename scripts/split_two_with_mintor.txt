@@ -65,14 +65,14 @@
   liver_77     liver= 2,768,592  tumor=    19,405 *
   liver_29     liver= 2,396,038  tumor=    20,627
   liver_30     liver= 3,464,910  tumor=    20,938
-  liver_10     liver= 2,482,166  tumor=    21,083
+  liver_10     liver= 2,481,641  tumor=    21,083
   liver_8      liver= 2,768,364  tumor=    21,397
   liver_37     liver= 2,726,331  tumor=    21,630
   liver_96     liver= 3,265,253  tumor=    23,291
   liver_1      liver= 2,153,163  tumor=    24,042
   liver_17     liver= 2,328,275  tumor=    24,621
   liver_13     liver= 1,979,012  tumor=    24,993
-  liver_102    liver= 2,671,696  tumor=    25,296
+  liver_102    liver= 2,671,624  tumor=    25,296
   liver_79     liver= 1,821,750  tumor=    25,511
   liver_7      liver= 2,490,162  tumor=    26,684
   liver_78     liver= 2,263,577  tumor=    27,597
@@ -215,6 +215,6 @@
   大:   tumor >= 300,000 体素
 
 划分说明:
-  train:   112个全部参与训练（包含monitor子集）
+  train:   112个全部参与训练(包含monitor子集)
   monitor: 12个,train的子集,覆盖各类别,用于训练中监控dice/选best ckpt
   test:    19个,nnUNet fold0验证集,用于最终和nnUNet对比

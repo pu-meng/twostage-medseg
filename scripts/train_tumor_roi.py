@@ -435,7 +435,7 @@ def build_pred_bboxes(
             if isinstance(logits, (tuple, list)):
                 logits = logits[0]
 
-            pred = torch.argmax(logits.float(), dim=1)[0].cpu()
+            pred = torch.argmax(logits.float(), dim=1)[0].cpu() #type:ignore
             liver_mask = pred == 1
             liver_mask = filter_largest_component(liver_mask)
 
@@ -598,8 +598,8 @@ def main():
         "n_monitor_cases": len(va),
         "n_test_cases": len(te),
         "num_classes": 2,
-        "optimizer": "AdamW",
-        "scheduler": "CosineAnnealingLR",
+        "optimizer": "SGD_momentum0.99_wd3e-5_nesterov",
+        "scheduler": "PolyLR_power0.9",
         "T_max": int(args.epochs),
         "in_channels": 2 if args.two_channel else 1,
         "out_channels": 2,
@@ -616,6 +616,8 @@ def main():
         "no_tumor_repeat_scale": int(args.no_tumor_repeat_scale),
         "large_tumor_thresh": int(args.large_tumor_thresh),
         "large_tumor_repeat_scale": int(args.large_tumor_repeat_scale),
+        "small_tumor_zoom_thresh": int(args.small_tumor_zoom_thresh),
+        "small_tumor_zoom_factor": float(args.small_tumor_zoom_factor),
         "use_pred_bbox": bool(args.use_pred_bbox),
         "stage1_ckpt": args.stage1_ckpt,
         "stage1_model": args.stage1_model,
@@ -734,11 +736,13 @@ def main():
         args.model, in_channels=in_channels, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
 
-    torch._dynamo.config.suppress_errors = True  # 保险:编译失败不崩溃
+    torch._dynamo.config.suppress_errors = True #type:ignore # 保险:编译失败不崩溃
 
     # reduce-overhead: 减少 Python 调度开销，对固定 patch 尺寸效果好，首次慢但后续更快
     model = torch.compile(model, mode="reduce-overhead")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=args.lr, momentum=0.99, weight_decay=3e-5, nesterov=True
+    )
     if args.learnable_loss:
         criterion = LearnableWeightedLoss(base_loss_type=args.loss).to(device)
         criterion_optimizer = torch.optim.Adam(criterion.parameters(), lr=1e-3)
@@ -746,7 +750,10 @@ def main():
         criterion = None
         criterion_optimizer = None
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    # Poly LR decay: lr = lr_init * (1 - epoch/epochs)^0.9，对齐nnUNet
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lr_lambda=lambda epoch: (1 - epoch / args.epochs) ** 0.9
+    )
     scaler = torch.cuda.amp.GradScaler() if args.amp and device == "cuda" else None
 
     # 提前构建 loss_fn，避免每 epoch 重建（节省少量 Python 开销）

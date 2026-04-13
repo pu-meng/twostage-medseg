@@ -22,9 +22,9 @@
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/medseg_project \
+  --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+  --exp_root /home/PuMengYu/experiments/twostage \
   --exp_name dynunet_focaltversky_smallmine_p128_finetune \
   --model dynunet \
   --epochs 100 \
@@ -53,20 +53,20 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --no_tumor_repeat_scale 2 \
   --large_tumor_thresh 50000 \
   --large_tumor_repeat_scale 3 \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+  --pred_bbox_cache /home/PuMengYu/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/PuMengYu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
   --seed 0
 
 # ============================================================
 # 旧：实验十一原始训练（已中断，98epoch, best=0.6481）
 # ============================================================
 # CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-#   --medseg_root /home/pumengyu/medseg_project \
-#   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-#   --exp_root /home/pumengyu/experiments/twostage \
+#   --medseg_root /home/PuMengYu/medseg_project \
+#   --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+#   --exp_root /home/PuMengYu/experiments/twostage \
 #   --exp_name dynunet_focaltversky_smallmine_p128 \
 #   --model dynunet \
 #   --epochs 300 \
@@ -95,11 +95,11 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 #   --no_tumor_repeat_scale 2 \
 #   --large_tumor_thresh 50000 \
 #   --large_tumor_repeat_scale 3 \
-#   --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+#   --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
 #   --stage1_patch 144 144 144 \
 #   --stage1_model dynunet \
-#   --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-#   --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt \
+#   --pred_bbox_cache /home/PuMengYu/Task03_Liver_json/pred_bbox_stage1.json \
+#   --init_ckpt /home/PuMengYu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt \
 #   --seed 0
 
 
@@ -114,10 +114,10 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 # ============================================================
 
 # CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
-#   --medseg_root /home/pumengyu/medseg_project \
-#   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-#   --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-#   --stage2_ckpt /home/pumengyu/experiments/twostage/dynunet_dicece_nnunet_p128/train/04-05-01-14-36/best.pt \
+#   --medseg_root /home/PuMengYu/medseg_project \
+#   --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+#   --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+#   --stage2_ckpt /home/PuMengYu/experiments/twostage/dynunet_dicece_nnunet_p128/train/04-05-01-14-36/best.pt \
 #   --stage1_model dynunet --stage2_model dynunet \
 #   --stage1_patch 144 144 144 --stage2_patch 96 96 96 \
 #   --stage2_sw_batch_size 1 \
@@ -137,10 +137,10 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 # ============================================================
 
 # CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
-#   --medseg_root /home/pumengyu/medseg_project \
-#   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-#   --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-#   --stage2_ckpt /home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+#   --medseg_root /home/PuMengYu/medseg_project \
+#   --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+#   --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+#   --stage2_ckpt /home/PuMengYu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
 #   --stage1_model dynunet --stage2_model dynunet \
 #   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \
 #   --stage2_sw_batch_size 1 \
@@ -149,11 +149,11 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 #   --comp_prob_thresh 0.4 \
 #   --split test
 
-CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-  --stage2_ckpt /home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
+  --medseg_root /home/PuMengYu/medseg_project \
+  --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+  --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage2_ckpt /home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/best.pt \
   --stage1_model dynunet --stage2_model dynunet \
   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \
   --stage2_sw_batch_size 1 \
@@ -169,14 +169,14 @@ init_ckpt: 实验十一 best.pt
 ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/medseg_project \
+  --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+  --exp_root /home/PuMengYu/experiments/twostage \
   --exp_name dynunet_focaltversky_smallmine_zoom_p128 \
   --model dynunet \
-  --epochs 150 \
+  --epochs 700 \
   --batch_size 3 \
-  --lr 1e-4 \
+  --lr 1e-3 \
   --patch 128 128 128 \
   --val_patch 96 96 96 \
   --sw_batch_size 1 \
@@ -202,9 +202,53 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --large_tumor_repeat_scale 3 \
   --small_tumor_zoom_thresh 5000 \
   --small_tumor_zoom_factor 2.0 \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+  --pred_bbox_cache /home/PuMengYu/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/PuMengYu/experiments/twostage/dynunet_focaltversky_smallmine_p128/train/04-06-12-56-02/best.pt \
+  --seed 42
+
+再次训练
+
+
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root /home/PuMengYu/medseg_project \
+  --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+  --exp_root /home/PuMengYu/experiments/twostage \
+  --exp_name dynunet_focaltversky_smallmine_zoom_p128 \
+  --model dynunet \
+  --epochs 500 \
+  --batch_size 3 \
+  --lr 1e-3 \
+  --patch 128 128 128 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 1 \
+  --val_every 3 \
+  --num_workers 10 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss focaltversky \
+  --val_overlap 0.25 \
+  --repeats 8 \
+  --tumor_ratios 0.02 0.98 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_min 8 \
+  --margin_max 20 \
+  --use_pred_bbox \
+  --small_tumor_thresh 5000 \
+  --small_tumor_repeat_scale 4 \
+  --no_tumor_repeat_scale 2 \
+  --large_tumor_thresh 50000 \
+  --large_tumor_repeat_scale 3 \
+  --small_tumor_zoom_thresh 5000 \
+  --small_tumor_zoom_factor 2.0 \
+  --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_patch 144 144 144 \
+  --stage1_model dynunet \
+  --pred_bbox_cache /home/PuMengYu/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt_ckpt /home/PuMengYu/experiments/twostage/dynunet_focaltversky_smallmine_zoom_p128/train/04-10-19-52-30/best.pt \
   --seed 42

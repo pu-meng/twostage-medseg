@@ -6,6 +6,9 @@ def dice_binary(pred: torch.Tensor, gt: torch.Tensor) -> float:
     """
     pred.bool()也是类似len(x),都是根据pred的类型调用它的.bool()方法
     len(x)==x.__len__(),这里的__len__()是x的类型的__len__()方法
+    不统计无肿瘤,如果pred和gt都没有肿瘤,则返回nan,调用方可以选择是否纳入统计
+    这样做的原因是nnUNet在计算tumor dice时,如果某个case的gt没有肿瘤,则不参与tumor dice的均值计算
+    这样可以避免无肿瘤case的tumor dice为1.0,拉高均值,导致对比不公平
     
     """
     pred = pred.bool()
@@ -15,14 +18,28 @@ def dice_binary(pred: torch.Tensor, gt: torch.Tensor) -> float:
     pred_sum = pred.sum().item()
     gt_sum = gt.sum().item()
 
-    # gt 和 pred 都为空：不返回 1.0，返回 nan，由调用方决定是否纳入统计
-    # 对应 nnUNet 做法：无肿瘤 case 不参与 tumor dice 均值计算
+    # gt 和 pred 都为空：返回 nan，不参与均值统计（双空 case 不应拉高均值）
+    # gt 无肿瘤但 pred 有肿瘤（假阳性）：inter=0，返回 0.0，参与均值统计，惩罚误报
+    # gt 有肿瘤：正常计算，无论 pred 是否为空
     if pred_sum == 0 and gt_sum == 0:
         return float("nan")
     return 2.0 * inter / (pred_sum + gt_sum + 1e-8)
 
 
 def compute_metrics(pred: torch.Tensor, gt: torch.Tensor) -> Dict[str, float]:
+    """
+    TP:预测为正,实际为正
+    TN:y预测为负,实际为负
+    FP:预测为正,实际为负
+    FN:预测为负,实际为正
+    precision:TP/(TP+FP),预测为正的样本中实际为正的比例,也叫查准率
+    recall:TP/(TP+FN),实际为正的样本中被正确预测为正的比例,也叫查全率
+    FPR:FP/(FP+TN),实际为负的样本中被错误预测为正的比例
+    FDR:FP/(FP+TP),预测为正的样本中被错误预测为正的比例
+    NPV:TN/(TN+FN),预测为负的样本中实际为负的比例
+    ACC:(TP+TN)/(TP+FP+FN+TN),预测正确的样本占总样本的比例
+    FNR:FN/(TP+FN),实际为正的样本中被错误预测为负的比例
+    """
     # pred = bool(pred) #bool()会把整个tensor变成True/False
     # gt = bool(gt)
     pred = pred.bool()
@@ -33,7 +50,7 @@ def compute_metrics(pred: torch.Tensor, gt: torch.Tensor) -> Dict[str, float]:
     TN = (~pred & ~gt).sum().item()
     dice = dice_binary(pred, gt)
     jaccard = TP / (TP + FP + FN + 1e-8)
-    precision = TP / (TP + FP + 1e-8)
+    precision = TP / (TP + FP + 1e-8)  
     recall = TP / (TP + FN + 1e-8)
     FPR = FP / (FP + TN + 1e-8)
     FDR = FP / (FP + TP + 1e-8)
