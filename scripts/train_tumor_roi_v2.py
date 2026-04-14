@@ -243,6 +243,11 @@ def parse_args():
         default=None,
         help="pred bbox JSON 缓存路径。存在则直接读取跳过推理，不存在则推理后自动保存，不传则每次重新推理",
     )
+    p.add_argument(
+        "--use_coarse_tumor",
+        action="store_true",
+        help="Stage2 使用两通道输入(Ch1=CT, Ch2=GT tumor mask)，训练时第二通道来自GT，推理时来自Stage1 softmax prob",
+    )
 
     return p.parse_args()
 
@@ -506,7 +511,8 @@ def main():
         "optimizer": "AdamW",
         "scheduler": "CosineAnnealingLR",
         "T_max": int(args.epochs),
-        "in_channels": 1,
+        "in_channels": 2 if args.use_coarse_tumor else 1,
+        "use_coarse_tumor": bool(args.use_coarse_tumor),
         "out_channels": 2,
         "resume": args.resume,
         "learnable_loss": bool(args.learnable_loss),
@@ -563,6 +569,7 @@ def main():
         pred_bboxes=pred_bboxes_train,  # None 时行为与之前完全一致
         small_tumor_zoom_thresh=args.small_tumor_zoom_thresh,
         small_tumor_zoom_factor=args.small_tumor_zoom_factor,
+        use_coarse_tumor=args.use_coarse_tumor,
     )
 
     # --total_steps：自动反推 epochs，对齐不同 repeats/scale 实验的训练量
@@ -590,6 +597,7 @@ def main():
         bbox_jitter=False,
         bbox_max_shift=0,
         random_margin=False,
+        use_coarse_tumor=args.use_coarse_tumor,
     )
     # train_tf是训练时的数据增强，val_tf是验证时的数据增强
     # train_ds是训练集，val_ds是验证集,是TumorROIDataset的实例
@@ -627,8 +635,9 @@ def main():
         )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    stage2_in_channels = 2 if args.use_coarse_tumor else 1
     model = build_model(
-        args.model, in_channels=1, out_channels=2, img_size=tuple(args.patch)
+        args.model, in_channels=stage2_in_channels, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
 
     torch._dynamo.config.suppress_errors = True  #type: ignore # 保险:编译失败不崩溃

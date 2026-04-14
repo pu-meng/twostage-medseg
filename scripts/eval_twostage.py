@@ -521,11 +521,14 @@ def main():
                 logits1
             )  # 防御性:确保是 tensor(autocast 可能返回其他类型)
             # argmax 在 channel 维取最大值 → 每个 voxel 得到类别 id (0 或 1)
+            prob1 = torch.softmax(logits1.float(), dim=1)[0].cpu()  # [C,D,H,W]
             pred1 = torch.argmax(logits1.float(), dim=1)[
                 0
             ].cpu()  # [1,C,D,H,W] → [D,H,W]
             liver_mask = pred1 == 1  # [D,H,W] bool,True 的位置就是预测的肝脏
-            coarse_tumor_mask = (pred1 == 2) if args.stage1_out_channels == 3 else None
+            # 软概率：stage1三分类时取channel2的softmax概率图，而非hard mask
+            # 训练时第二通道是GT 0/1，推理时用软概率（0~1），分布更接近
+            coarse_tumor_prob = prob1[2] if args.stage1_out_channels == 3 else None  # [D,H,W] float
 
             # 后处理:只保留最大连通域,去掉散落的假阳性小块
             liver_mask = filter_largest_component(liver_mask)
@@ -554,14 +557,12 @@ def main():
                 image_roi = crop_3d(image, bbox)  # [1,D,H,W] → [1,d,h,w](d≤D, h≤H, w≤W)
 
                 if args.use_coarse_tumor:
-                    # 第二通道:Stage1 预测粗糙肿瘤 mask 裁到同一 bbox(无肿瘤预测时全零)
-                    if (
-                        coarse_tumor_mask is not None
-                        and coarse_tumor_mask.sum().item() > 0
-                    ):
+                    # 第二通道:Stage1 tumor softmax 软概率裁到同一 bbox
+                    # 用软概率而非hard mask：训练时GT是0/1，推理时stage1输出0~1，分布更接近
+                    if coarse_tumor_prob is not None:
                         tumor_roi = crop_3d(
-                            coarse_tumor_mask.float().unsqueeze(0), bbox
-                        )
+                            coarse_tumor_prob.unsqueeze(0), bbox
+                        )  # [1,d,h,w] float 0~1
                     else:
                         tumor_roi = torch.zeros_like(image_roi)
                     x_roi = (
