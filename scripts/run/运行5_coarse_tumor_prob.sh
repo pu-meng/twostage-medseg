@@ -1,0 +1,40 @@
+CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
+  --medseg_root /home/PuMengYu/medseg_project \
+  --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
+  --exp_root /home/PuMengYu/experiments/twostage \
+  --exp_name coarse_tumor_prob_deep_p160_sgd \
+  --model dynunet_deep \
+  --use_coarse_tumor \
+  --epochs 200 \
+  --batch_size 2 \
+  --lr 3e-3 \
+  --patch 160 160 160 \
+  --val_patch 160 160 160 \
+  --sw_batch_size 1 \
+  --val_every 3 \
+  --num_workers 10 \
+  --prefetch_factor 4 \
+  --amp \
+  --loss focaltversky \
+  --val_overlap 0.25 \
+  --repeats 8 \
+  --tumor_ratios 0.4 0.60 \
+  --margin 8 \
+  --bbox_jitter \
+  --bbox_max_shift 8 \
+  --random_margin \
+  --margin_min 8 \
+  --margin_max 20 \
+  --use_pred_bbox \
+  --small_tumor_thresh 5000 \
+  --small_tumor_repeat_scale 6 \
+  --no_tumor_repeat_scale 2 \
+  --large_tumor_thresh 50000 \
+  --large_tumor_repeat_scale 5 \
+  --small_tumor_zoom_thresh 5000 \
+  --small_tumor_zoom_factor 3.0 \
+  --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
+  --stage1_patch 144 144 144 \
+  --stage1_model dynunet \
+  --pred_bbox_cache /home/PuMengYu/Task03_Liver_json/pred_bbox_stage1.json \
+  --seed 42
