@@ -601,7 +601,8 @@ def main():
         "optimizer": "SGD_momentum0.99_wd3e-5_nesterov",
         "scheduler": "PolyLR_power0.9",
         "T_max": int(args.epochs),
-        "in_channels": 2 if args.two_channel else 1,
+        "in_channels": 2 if (args.two_channel or args.use_coarse_tumor) else 1,
+        "use_coarse_tumor": bool(args.use_coarse_tumor),
         "out_channels": 2,
         "two_channel": bool(args.two_channel),
         "resume": args.resume,
@@ -694,6 +695,7 @@ def main():
         bbox_jitter=False,
         bbox_max_shift=0,
         random_margin=False,
+        use_coarse_tumor=args.use_coarse_tumor,
     )
     # train_tf是训练时的数据增强，val_tf是验证时的数据增强
     # train_ds是训练集，val_ds是验证集,是TumorROIDataset的实例
@@ -731,7 +733,7 @@ def main():
         )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    in_channels = 2 if args.two_channel else 1
+    in_channels = 2 if (args.two_channel or args.use_coarse_tumor) else 1
     model = build_model(
         args.model, in_channels=in_channels, out_channels=2, img_size=tuple(args.patch)
     ).to(device)
