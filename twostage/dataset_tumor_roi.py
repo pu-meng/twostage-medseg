@@ -70,6 +70,8 @@ class TumorROIDataset(Dataset):
         # 训练时用 GT liver mask 作第二通道，推理时换成 Stage1 预测
         use_coarse_tumor: bool = False,  # 是否启用粗糙肿瘤通道(Ch1=CT, Ch2=Stage1粗糙肿瘤mask)
         # 需要 pred_bboxes 为新格式(含 tumor bbox)
+        coarse_tumor_cache: dict | None = None,  # Stage1 软概率 cache，格式: {case_name: Tensor[1,D,H,W] float}
+        # 传入时用 Stage1 软概率作为 Ch2（验证集），不传则用 GT 0/1 mask（训练集 teacher forcing）
         small_tumor_zoom_thresh: int = 0,   # 小肿瘤 zoom-in 阈值(体素数)，0=关闭
         small_tumor_zoom_factor: float = 2.0,  # zoom-in 倍率，2.0=放大2倍
     ) -> None:
@@ -91,6 +93,7 @@ class TumorROIDataset(Dataset):
         self.pred_bboxes = pred_bboxes
         self.two_channel = bool(two_channel)
         self.use_coarse_tumor = bool(use_coarse_tumor)
+        self.coarse_tumor_cache = coarse_tumor_cache  # dict or None
         self.small_tumor_zoom_thresh = int(small_tumor_zoom_thresh)
         self.small_tumor_zoom_factor = float(small_tumor_zoom_factor)
 
@@ -366,8 +369,13 @@ class TumorROIDataset(Dataset):
         tumor_roi = (label_roi == 2).long()
 
         if self.use_coarse_tumor:
-            # Ch1: CT，Ch2: Stage1 粗糙肿瘤 mask(训练时用 GT tumor mask 代替)
-            coarse_tumor = (label_roi == 2).float()  # [1, d, h, w]  0/1
+            if self.coarse_tumor_cache is not None and case_name in self.coarse_tumor_cache:
+                # 验证时：用 Stage1 软概率（已裁到全图坐标系），裁到当前 ROI bbox
+                full_prob = self.coarse_tumor_cache[case_name]  # [1, D, H, W] float
+                coarse_tumor = crop_3d(full_prob, bbox).float()  # [1, d, h, w]
+            else:
+                # 训练时：用 GT tumor mask 做 teacher forcing（0/1）
+                coarse_tumor = (label_roi == 2).float()  # [1, d, h, w]
             image_2ch = torch.cat(
                 [image_roi.float(), coarse_tumor], dim=0
             )  # [2, d, h, w]

@@ -5,8 +5,8 @@
 
 用法:
 CUDA_VISIBLE_DEVICES=0 python scripts/eval_stage1_tumor_recall.py \
-  --ckpt /home/PuMengYu/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
-  --roi_pt_root /home/PuMengYu/Task03_Liver_roi \
+  --ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
+  --roi_pt_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi \
   --model dynunet \
   --patch 144 144 144 \
   --sw_batch_size 2 \
@@ -27,8 +27,8 @@ import numpy as np
 import torch
 from monai.inferers.utils import sliding_window_inference
 
-sys.path.insert(0, "/home/PuMengYu/medseg_project")
-sys.path.insert(0, "/home/PuMengYu/twostage_medseg")
+sys.path.insert(0, "/home/PuMengYu/MSD_LiverTumorSeg/medseg_project")
+sys.path.insert(0, "/home/PuMengYu/MSD_LiverTumorSeg/twostage_medseg")
 
 from medseg.models.build_model import build_model
 from twostage_medseg.metrics.metrics_utils import compute_metrics
@@ -67,7 +67,7 @@ def split_three_ways(items, val_ratio=0.2, test_ratio=0.1, seed=0):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", type=str, required=True)
-    p.add_argument("--roi_pt_root", type=str, default="/home/PuMengYu/Task03_Liver_roi")
+    p.add_argument("--roi_pt_root", type=str, default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi")
     p.add_argument("--model", type=str, default="dynunet")
     p.add_argument("--patch", type=int, nargs=3, default=[144, 144, 144])
     p.add_argument("--sw_batch_size", type=int, default=2)

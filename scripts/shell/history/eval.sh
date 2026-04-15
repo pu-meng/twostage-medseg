@@ -3,11 +3,11 @@
 # 历史 eval 命令（已完成，仅供参考）
 # 当前 eval 模板在 运行.sh 末尾
 # ============================================================
-MEDSEG=/home/pumengyu/medseg_project
-DATA=/home/pumengyu/Task03_Liver_pt
-EXP=/home/pumengyu/experiments/twostage
+MEDSEG=/home/PuMengYu/MSD_LiverTumorSeg/medseg_project
+DATA=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt
+EXP=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage
 
-STAGE1_CKPT=/home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+STAGE1_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
 ROIJITTER_CKPT=$EXP/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
 

@@ -12,11 +12,11 @@
 #   3. 在正确基础上补充 sweep1 未覆盖的组合
 # ============================================================
 
-STAGE1_CKPT=/home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
-STAGE2_CKPT=/home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/best.pt
-MEDSEG=/home/PuMengYu/medseg_project
-PREPROC=/home/PuMengYu/Task03_Liver_roi
-SWEEP_ROOT=/home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/sweep2
+STAGE1_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+STAGE2_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/best.pt
+MEDSEG=/home/PuMengYu/MSD_LiverTumorSeg/medseg_project
+PREPROC=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi
+SWEEP_ROOT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/sweep2
 
 BASE_ARGS="
   --medseg_root $MEDSEG
@@ -122,14 +122,14 @@ run_eval "min500_slt02" \
 run_eval "last_no_postprocess" \
     --no_postprocess \
     --prob_threshold 0.3 \
-    --stage2_ckpt /home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/last.pt
+    --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/last.pt
 
 run_eval "last_baseline" \
     --prob_threshold 0.3 \
     --min_tumor_size 100 \
     --comp_prob_thresh 0.5 \
     --small_tumor_low_thresh 0.2 \
-    --stage2_ckpt /home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/last.pt
+    --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/last.pt
 
 # ─── 汇总──────────────────────────────────────────────────────
 echo ""

@@ -2,11 +2,11 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
   --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi \
   --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
-  --exp_name focaltversky_smallmine_zoom_p160 \
-  --model dynunet \
+  --exp_name dicece_deep_p160_sgd \
+  --model dynunet_deep \
   --epochs 200 \
   --batch_size 2 \
-  --lr 1e-4 \
+  --lr 3e-3 \
   --patch 160 160 160 \
   --val_patch 160 160 160 \
   --sw_batch_size 1 \
@@ -14,10 +14,10 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --num_workers 10 \
   --prefetch_factor 4 \
   --amp \
-  --loss focaltversky \
+  --loss dicece \
   --val_overlap 0.25 \
   --repeats 8 \
-  --tumor_ratios 0.1 0.90 \
+  --tumor_ratios 0.4 0.60 \
   --margin 8 \
   --bbox_jitter \
   --bbox_max_shift 8 \
@@ -26,7 +26,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --margin_max 20 \
   --use_pred_bbox \
   --small_tumor_thresh 5000 \
-  --small_tumor_repeat_scale 4 \
+  --small_tumor_repeat_scale 6 \
   --no_tumor_repeat_scale 2 \
   --large_tumor_thresh 50000 \
   --large_tumor_repeat_scale 5 \
@@ -36,5 +36,4 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
   --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/dynunet_focaltversky_smallmine_zoom_p128/train/04-11-11-53-09/best.pt \
   --seed 42

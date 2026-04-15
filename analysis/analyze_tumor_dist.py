@@ -2,8 +2,8 @@
 分析训练集每个 case 的肿瘤体积分布，输出统计信息，帮助确定差异化 oversampling 的阈值。
 用法:
     python scripts/analyze_tumor_dist.py \
-        --medseg_root /home/pumengyu/medseg_project \
-        --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+        --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+        --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
         --val_ratio 0.2 --test_ratio 0.1 --seed 0
 """
 from __future__ import annotations
@@ -24,8 +24,8 @@ def add_medseg_to_syspath(medseg_root: str) -> None:
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--medseg_root", default="/home/pumengyu/medseg_project")
-    p.add_argument("--preprocessed_root", default="/home/pumengyu/Task03_Liver_pt")
+    p.add_argument("--medseg_root", default="/home/PuMengYu/MSD_LiverTumorSeg/medseg_project")
+    p.add_argument("--preprocessed_root", default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt")
     p.add_argument("--val_ratio", type=float, default=0.2)
     p.add_argument("--test_ratio", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=0)

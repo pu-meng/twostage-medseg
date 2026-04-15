@@ -1,0 +1,17 @@
+CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
+  --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/coarse_tumor_prob_deep_p160_sgd/train/04-14-12-42-39/best.pt \
+  --stage1_model dynunet \
+  --stage2_model dynunet_deep \
+  --stage1_patch 144 144 144 \
+  --stage2_patch 160 160 160 \
+  --stage1_out_channels 3 \
+  --use_coarse_tumor \
+  --val_ratio 0.2 \
+  --test_ratio 0.1 \
+  --seed 0 \
+  --split test \
+  --overlap 0.5 \
+  --prob_threshold 0.3

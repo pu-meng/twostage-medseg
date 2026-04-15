@@ -2,12 +2,12 @@
 # ============================================================
 # 历史训练实验（已完成 / 已停止，仅供参考，不要重跑）
 # ============================================================
-MEDSEG=/home/pumengyu/medseg_project
-DATA=/home/pumengyu/Task03_Liver_pt
-DATA_ROI=/home/pumengyu/Task03_Liver_roi
-EXP=/home/pumengyu/experiments/twostage
+MEDSEG=/home/PuMengYu/MSD_LiverTumorSeg/medseg_project
+DATA=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt
+DATA_ROI=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi
+EXP=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage
 
-STAGE1_CKPT=/home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+STAGE1_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
 ROIJITTER_CKPT=$EXP/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
 
@@ -139,4 +139,4 @@ CUDA_VISIBLE_DEVICES=1 python -m scripts.train \
   --overlap 0.5 \
   --repeats 3
 # note: 无 --merge_label12_to1，无 --init_ckpt，从头训练
-# exp_root 默认 /home/pumengyu/experiments（不是 twostage 子目录）
+# exp_root 默认 /home/PuMengYu/MSD_LiverTumorSeg/experiments（不是 twostage 子目录）

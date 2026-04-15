@@ -73,7 +73,7 @@ def parse_args():
     p.add_argument(
         "--exp_root",
         type=str,
-        default="/home/pumengyu/experiments",
+        default="/home/PuMengYu/MSD_LiverTumorSeg/experiments",
         help="输出结果的保存路径",
     )
     p.add_argument("--exp_name", type=str, default="tumor_roi_dynunet")

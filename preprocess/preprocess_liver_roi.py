@@ -14,9 +14,9 @@ preprocess_liver_roi.py
 
 用法:
   python scripts/preprocess_liver_roi.py \
-    --input_dir /home/pumengyu/Task03_Liver_pt \
-    --output_dir /home/pumengyu/Task03_Liver_roi \
-    --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
+    --input_dir /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+    --output_dir /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi \
+    --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
     --margin_extra 30
 """
 

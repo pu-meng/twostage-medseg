@@ -8,6 +8,12 @@ import time
 from datetime import datetime
 import warnings as _w
 from pathlib import Path as _Path
+
+# Add medseg_project to path so `medseg` package can be found
+_medseg_project = str(_Path(__file__).resolve().parents[2] / "medseg_project")
+if _medseg_project not in sys.path:
+    sys.path.insert(0, _medseg_project)
+
 from monai.inferers.utils import sliding_window_inference
 from twostage_medseg.metrics.filter import filter_largest_component
 from twostage_medseg.twostage.roi_utils import compute_bbox_from_mask
@@ -73,7 +79,7 @@ def parse_args():
     p.add_argument(
         "--exp_root",
         type=str,
-        default="/home/pumengyu/experiments",
+        default="/home/PuMengYu/MSD_LiverTumorSeg/experiments",
         help="输出结果的保存路径",
     )
     p.add_argument("--exp_name", type=str, default="tumor_roi_dynunet")
@@ -482,6 +488,72 @@ def build_pred_bboxes(
     return pred_bboxes
 
 
+def build_coarse_tumor_cache(
+    stage1_ckpt: str,
+    pt_paths: list,
+    device: str,
+    stage1_model: str = "dynunet",
+    stage1_patch: tuple = (144, 144, 144),
+    stage1_out_channels: int = 3,
+    overlap: float = 0.5,
+) -> dict:
+    """
+    用 Stage1 模型对 pt_paths 推理，返回每个 case 的 tumor softmax 软概率。
+    格式: {case_name: Tensor[1, D, H, W] float}，坐标系与 .pt 文件对齐（已做 crop_bbox 偏移）。
+    验证集用此 cache 作为 Ch2，替代 GT mask，消除 train/val 分布差异。
+    """
+    from medseg.models.build_model import build_model
+    from medseg.utils.ckpt import load_init_weights
+
+    if stage1_out_channels != 3:
+        print("[coarse_tumor_cache] stage1_out_channels!=3, 无法生成软概率, 返回空 cache")
+        return {}
+
+    stage1 = build_model(
+        stage1_model,
+        in_channels=1,
+        out_channels=stage1_out_channels,
+        img_size=tuple(stage1_patch),
+    ).to(device)
+    load_init_weights(stage1_ckpt, stage1, map_location=device)
+    stage1.eval()
+
+    cache = {}
+    print(f"[coarse_tumor_cache] 生成验证集 Stage1 软概率 cache，共 {len(pt_paths)} 个 case ...")
+    with torch.no_grad():
+        for i, pt_path in enumerate(pt_paths):
+            case_name = _Path(pt_path).stem
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", FutureWarning)
+                data = torch.load(pt_path, map_location="cpu", weights_only=False, mmap=True)
+
+            image = data["image"].float()  # [1, D, H, W]
+            x = image.unsqueeze(0).to(device)  # [1, 1, D, H, W]
+
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=(device == "cuda")):
+                logits = sliding_window_inference(
+                    inputs=x,
+                    roi_size=tuple(stage1_patch),
+                    sw_batch_size=1,
+                    predictor=stage1,
+                    overlap=overlap,
+                )
+            if isinstance(logits, (tuple, list)):
+                logits = logits[0]
+
+            # 取 channel 2（tumor）的 softmax 软概率，[D, H, W] → [1, D, H, W]
+            prob = torch.softmax(logits.float(), dim=1)[0, 2].cpu().unsqueeze(0)  # [1, D, H, W]
+            cache[case_name] = prob
+
+            if (i + 1) % 5 == 0 or (i + 1) == len(pt_paths):
+                print(f"  [{i + 1}/{len(pt_paths)}] done")
+
+    del stage1
+    torch.cuda.empty_cache()
+    print(f"[coarse_tumor_cache] done, {len(cache)} cases")
+    return cache
+
+
 def pt_has_tumor(pt_path: str) -> bool:
     """
     判断一个 .pt case 是否含有 tumor
@@ -686,6 +758,20 @@ def main():
     config["steps_per_epoch"] = steps_per_epoch
     config["T_max"] = int(args.epochs)
 
+    # use_coarse_tumor 时为验证集生成 Stage1 软概率 cache，避免 val 用 GT 作 Ch2 导致指标虚高
+    val_coarse_tumor_cache = None
+    if args.use_coarse_tumor and args.stage1_ckpt:
+        _device_cache = "cuda" if torch.cuda.is_available() else "cpu"
+        val_coarse_tumor_cache = build_coarse_tumor_cache(
+            stage1_ckpt=args.stage1_ckpt,
+            pt_paths=va,
+            device=_device_cache,
+            stage1_model=args.stage1_model,
+            stage1_patch=tuple(args.stage1_patch),
+            stage1_out_channels=args.stage1_out_channels,
+            overlap=args.bbox_overlap,
+        )
+
     val_ds = TumorROIDataset(
         va,
         transform=val_tf,
@@ -696,6 +782,7 @@ def main():
         bbox_max_shift=0,
         random_margin=False,
         use_coarse_tumor=args.use_coarse_tumor,
+        coarse_tumor_cache=val_coarse_tumor_cache,
     )
     # train_tf是训练时的数据增强，val_tf是验证时的数据增强
     # train_ds是训练集，val_ds是验证集,是TumorROIDataset的实例

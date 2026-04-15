@@ -1,7 +1,7 @@
-CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/PuMengYu/medseg_project \
-  --preprocessed_root /home/PuMengYu/Task03_Liver_roi \
-  --exp_root /home/PuMengYu/experiments/twostage \
+CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name coarse_tumor_prob_deep_p160_sgd \
   --model dynunet_deep \
   --use_coarse_tumor \
@@ -33,8 +33,9 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --large_tumor_repeat_scale 5 \
   --small_tumor_zoom_thresh 5000 \
   --small_tumor_zoom_factor 3.0 \
-  --stage1_ckpt /home/PuMengYu/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/PuMengYu/Task03_Liver_json/pred_bbox_stage1.json \
+  --stage1_out_channels 3 \
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
   --seed 42

@@ -33,7 +33,7 @@ echo "nnUNet_results=$nnUNet_results"
 echo ""
 echo "===== 步骤1: 转换数据格式 ====="
 $NNUNET_BIN/nnUNetv2_convert_MSD_dataset \
-    -i /home/pumengyu/Task03_Liver \
+    -i /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
     -overwrite_id 3
 
 echo "转换完成，检查:"

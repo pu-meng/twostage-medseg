@@ -4,11 +4,11 @@
 #  bash scripts/shell/sweep_min_tumor_size.sh 2>&1 | tee /tmp/sweep_min_tumor_size.log  
 # GPU 1
 
-STAGE1_CKPT=/home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
-STAGE2_CKPT=/home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
-MEDSEG_ROOT=/home/pumengyu/medseg_project
-PREPROCESSED_ROOT=/home/pumengyu/Task03_Liver_pt
-SAVE_DIR=/home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/eval_min_tumor_size_sweep
+STAGE1_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+STAGE2_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
+MEDSEG_ROOT=/home/PuMengYu/MSD_LiverTumorSeg/medseg_project
+PREPROCESSED_ROOT=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt
+SAVE_DIR=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_roi_jitter/eval_min_tumor_size_sweep
 
 for SIZE in 0 100 200 500 1000; do
     echo "========================================"

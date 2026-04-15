@@ -2,17 +2,17 @@
 # 对两个 ckpt 分别跑 test + val，保存可视化和 pred_pt
 # 运行方式: bash scripts/shell/eval_analysis.sh
 
-STAGE1_CKPT=/home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
-MEDSEG=/home/pumengyu/medseg_project
-DATA=/home/pumengyu/Task03_Liver_pt
+STAGE1_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+MEDSEG=/home/PuMengYu/MSD_LiverTumorSeg/medseg_project
+DATA=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt
 
 # ---------- ckpt A: 03-29-13-33-35/best.pt (原始最优) ----------
-CKPT_A=/home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-29-13-33-35/best.pt
-SAVE_A=/home/pumengyu/experiments/analysis/ckpt_A
+CKPT_A=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-29-13-33-35/best.pt
+SAVE_A=/home/PuMengYu/MSD_LiverTumorSeg/experiments/analysis/ckpt_A
 
 # ---------- ckpt B: 03-30-23-47-04/last.pt (resume后当前last) ----------
-CKPT_B=/home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt
-SAVE_B=/home/pumengyu/experiments/analysis/ckpt_B
+CKPT_B=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt
+SAVE_B=/home/PuMengYu/MSD_LiverTumorSeg/experiments/analysis/ckpt_B
 
 COMMON="
   --medseg_root $MEDSEG

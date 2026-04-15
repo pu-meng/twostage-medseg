@@ -13,8 +13,8 @@ CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
   --task liver \
   --exp_name dynunet_liver_tumor_stage1 \
   --model dynunet \
-  --data_root /home/pumengyu/Task03_Liver \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
   --num_classes 3 \
   --epochs 200 \
   --batch_size 1 \
@@ -42,9 +42,9 @@ CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_coarse_tumor_2ch \
   --model dynunet \
   --epochs 300 \
@@ -70,11 +70,11 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --use_pred_bbox \
   --use_coarse_tumor \
   --stage1_out_channels 3 \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_tumor_stage1/train/TIMESTAMP/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_tumor_stage1/train/TIMESTAMP/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1_3ch.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1_3ch.json \
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
 
 # ============================================================
 # 实验五 — pred_bbox ROI 干净对比
@@ -83,9 +83,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_predbbox_roi_clean \
   --model dynunet \
   --epochs 300 \
@@ -104,7 +104,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --margin 8 \
   --random_margin --margin_min 8 --margin_max 24 \
   --val_overlap 0.5 \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
 
 # ============================================================
@@ -114,9 +114,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_predbbox_roi_hardmine \
   --model dynunet \
   --epochs 300 \
@@ -138,7 +138,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --small_tumor_repeat_scale 4 \
   --no_tumor_repeat_scale 2 \
   --val_overlap 0.5 \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
 
 # ============================================================
@@ -148,9 +148,9 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_predbbox_roi_rep12_p128 \
   --model dynunet \
   --epochs 300 \
@@ -174,11 +174,11 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --margin_min 8 \
   --margin_max 20 \
   --use_pred_bbox \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
 
 
 # ============================================================
@@ -188,9 +188,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_predbbox_roi_largetx6_p128 \
   --model dynunet \
   --epochs 300 \
@@ -216,11 +216,11 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
   --large_tumor_thresh 50000 \
   --large_tumor_repeat_scale 6 \
   --use_pred_bbox \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
 
 
 # ============================================================
@@ -230,9 +230,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/train_tumor_roi.py \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_predbbox_roi_2ch \
   --model dynunet \
   --epochs 300 \
@@ -257,11 +257,11 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --margin_max 20 \
   --two_channel \
   --use_pred_bbox \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_roi_jitter/train/03-22-11-44-00/best.pt
 
 
 # ============================================================
@@ -272,10 +272,10 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 # 验证pred_bbox ROI+hardmining的效果,和纯pred_bbox ROI对比
 
 CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-  --stage2_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt \
   --stage1_model dynunet --stage2_model dynunet \
   --stage1_patch 144 144 144 --stage2_patch 96 96 96 \
   --stage2_sw_batch_size 2 \
@@ -288,10 +288,10 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
 验证纯pred_bbox ROI的效果
 
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-  --stage2_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_clean/train/03-28-09-49-40/best.pt \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_clean/train/03-28-09-49-40/best.pt \
   --stage1_model dynunet --stage2_model dynunet \
   --stage1_patch 144 144 144 --stage2_patch 96 96 96 \
   --stage2_sw_batch_size 2 \

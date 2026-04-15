@@ -25,9 +25,9 @@
 # scripts/shell/exp10_dynunet_ca.sh
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_ca_predbbox_roi_largetx6_p128 \
   --model dynunet_ca \
   --epochs 300 \
@@ -53,11 +53,11 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --use_pred_bbox \
   --large_tumor_thresh 50000 \
   --large_tumor_repeat_scale 3 \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt \
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1.json \
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt \
   --seed 0
 
 
@@ -66,10 +66,10 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
 # ============================================================
 
 # CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
-#   --medseg_root /home/pumengyu/medseg_project \
-#   --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-#   --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-#   --stage2_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_ca_predbbox_roi_largetx6_p128/train/TIMESTAMP/best.pt \
+#   --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+#   --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+#   --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+#   --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_ca_predbbox_roi_largetx6_p128/train/TIMESTAMP/best.pt \
 #   --stage1_model dynunet --stage2_model dynunet_ca \
 #   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \
 #   --stage2_sw_batch_size 2 \

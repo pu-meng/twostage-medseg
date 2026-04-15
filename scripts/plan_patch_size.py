@@ -176,9 +176,9 @@ def plan_patch(
 def parse_args():
     p = argparse.ArgumentParser(description="Auto plan patch size (real VRAM benchmark)")
     p.add_argument("--preprocessed_root", type=str,
-                   default="/home/PuMengYu/Task03_Liver_roi")
+                   default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi")
     p.add_argument("--medseg_root", type=str,
-                   default="/home/PuMengYu/medseg_project")
+                   default="/home/PuMengYu/MSD_LiverTumorSeg/medseg_project")
     p.add_argument("--model", type=str, default="dynunet_deep")
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--in_channels", type=int, default=1)

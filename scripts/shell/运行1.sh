@@ -3,23 +3,23 @@
 ============================================================
 实验十完整流程：Stage1重训（三分类）→ Stage2训练 → eval
 说明：
-  Step1 在 /home/pumengyu/medseg_project 目录下运行
-  Step2/Step3 在 /home/pumengyu/twostage_medseg 目录下运行
+  Step1 在 /home/PuMengYu/MSD_LiverTumorSeg/medseg_project 目录下运行
+  Step2/Step3 在 /home/PuMengYu/MSD_LiverTumorSeg/twostage_medseg 目录下运行
   Step2 的 --stage1_ckpt 需要在 Step1 完成后填入实际 TIMESTAMP
 ============================================================
 
 
 ============================================================
 Step 1 — Stage1 重训（三分类：背景/肝脏/肿瘤）
-cd /home/pumengyu/medseg_project
+cd /home/PuMengYu/MSD_LiverTumorSeg/medseg_project
 ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python -m scripts.train \
   --task liver \
   --exp_name dynunet_liver_tumor_stage1 \
   --model dynunet \
-  --data_root /home/pumengyu/Task03_Liver \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
   --num_classes 3 \
   --epochs 200 \
   --batch_size 1 \
@@ -41,14 +41,14 @@ CUDA_VISIBLE_DEVICES=1 python -m scripts.train \
 
 # ============================================================
 # Step 2 — Stage2 训练（双通道：CT + 粗糙肿瘤mask）
-# cd /home/pumengyu/twostage_medseg
+# cd /home/PuMengYu/MSD_LiverTumorSeg/twostage_medseg
 # 填入 Step1 训练完后的实际 TIMESTAMP
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --exp_root /home/pumengyu/experiments/twostage \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage \
   --exp_name tumor_dynunet_coarse_tumor_2ch \
   --model dynunet \
   --epochs 300 \
@@ -74,24 +74,24 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_tumor_roi.py \
   --use_pred_bbox \
   --use_coarse_tumor \
   --stage1_out_channels 3 \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_tumor_stage1/train/TIMESTAMP/best.pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_tumor_stage1/train/TIMESTAMP/best.pt \
   --stage1_patch 144 144 144 \
   --stage1_model dynunet \
-  --pred_bbox_cache /home/pumengyu/Task03_Liver_json/pred_bbox_stage1_3ch.json \
-  --init_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
+  --pred_bbox_cache /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_json/pred_bbox_stage1_3ch.json \
+  --init_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_hardmine/train/03-28-09-59-18/best.pt
 
 
 # ============================================================
 # Step 3 — eval
-# cd /home/pumengyu/twostage_medseg
+# cd /home/PuMengYu/MSD_LiverTumorSeg/twostage_medseg
 # 填入 Step1 和 Step2 训练完后的实际 TIMESTAMP
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-  --stage2_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-30-23-47-04/last.pt \
   --stage1_model dynunet --stage2_model dynunet \
   --stage1_out_channels 3 \
   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \
@@ -111,10 +111,10 @@ CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
-  --stage2_ckpt /home/pumengyu/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-29-13-33-35/best.pt \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/tumor_dynunet_predbbox_roi_largetx6_p128/train/03-29-13-33-35/best.pt \
   --stage1_model dynunet --stage2_model dynunet \
   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \
   --stage2_sw_batch_size 2 \

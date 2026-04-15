@@ -198,8 +198,8 @@ def vis_worst_cases(workdir: str, rows: list, n_worst: int = 3, preprocessed_roo
 
 if __name__ == "__main__":
     # ===== edit parameters here =====
-    EVAL_DIR           = "/home/pumengyu/experiments/twostage/dynunet_focaltversky_smallmine_p128/eval/04-06-12-56-02"
-    PREPROCESSED_ROOT  = "/home/pumengyu/Task03_Liver_pt"   # root dir of source .pt files
+    EVAL_DIR           = "/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/dynunet_focaltversky_smallmine_p128/eval/04-06-12-56-02"
+    PREPROCESSED_ROOT  = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt"   # root dir of source .pt files
     CASE               = None    # single case e.g. "liver_121", or None for all
     DICE_THRESHOLD     = 0.7     # only process cases with tumor_dice < this; None = all
     N_WORST            = None    # if set, only process the N worst cases (overrides DICE_THRESHOLD)

@@ -63,7 +63,7 @@ def parse_args():
     p.add_argument("--medseg_root", type=str, required=True)
     p.add_argument("--preprocessed_root", type=str, required=True)
     p.add_argument(
-        "--exp_root", type=str, default="/home/pumengyu/experiments_twostage"
+        "--exp_root", type=str, default="/home/PuMengYu/MSD_LiverTumorSeg/experiments_twostage"
     )
     p.add_argument("--exp_name", type=str, default="tumor_roi_dynunet")
     p.add_argument("--model", type=str, default="dynunet")

@@ -11,10 +11,10 @@
 #   small_tumor_low_thresh : 极小肿瘤(200~1000vox)激进低阈值（0=关闭）
 # ============================================================
 
-STAGE1_CKPT=/home/PuMengYu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
-STAGE2_CKPT=/home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/best.pt
-MEDSEG=/home/PuMengYu/medseg_project
-PREPROC=/home/PuMengYu/Task03_Liver_roi
+STAGE1_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt
+STAGE2_CKPT=/home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/train/04-12-21-15-06/best.pt
+MEDSEG=/home/PuMengYu/MSD_LiverTumorSeg/medseg_project
+PREPROC=/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi
 
 BASE_ARGS="
   --medseg_root $MEDSEG
@@ -37,7 +37,7 @@ run_eval() {
     echo "========================================================"
     CUDA_VISIBLE_DEVICES=0 python scripts/eval_twostage.py \
         $BASE_ARGS \
-        --save_dir /home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/sweep/$tag \
+        --save_dir /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/sweep/$tag \
         "$@"
     echo ">>> $tag 完成"
 }
@@ -137,7 +137,7 @@ echo ""
 echo "========================================================"
 echo " Sweep 完成，汇总各组 tumor dice："
 echo "========================================================"
-for d in /home/PuMengYu/experiments/twostage/focaltversky_smallmine_zoom_p160/sweep/*/report.txt; do
+for d in /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_smallmine_zoom_p160/sweep/*/report.txt; do
     tag=$(basename $(dirname $d))
     dice=$(grep "Dice: mean=" $d | grep -v Liver | awk '{print $2}' | cut -d= -f2)
     recall=$(grep "Recall: mean=" $d | awk '{print $2}' | cut -d= -f2)

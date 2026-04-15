@@ -14,11 +14,11 @@ import os
 import sys
 import torch
 #sys.path.insert()是为了把另一个项目的路径加入Python模块搜素路径
-sys.path.insert(0, "/home/PuMengYu/medseg_project")
+sys.path.insert(0, "/home/PuMengYu/MSD_LiverTumorSeg/medseg_project")
 from medseg.data.dataset_offline import split_two_with_monitor
 
-PT_DIR = "/home/PuMengYu/Task03_Liver_roi"
-OUT_TXT = "/home/PuMengYu/twostage_medseg/scripts/split_two_with_mintor.txt"
+PT_DIR = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi"
+OUT_TXT = "/home/PuMengYu/MSD_LiverTumorSeg/twostage_medseg/scripts/split_two_with_mintor.txt"
 
 # 阈值
 TINY_MAX = 5_000

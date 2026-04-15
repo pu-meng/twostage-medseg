@@ -8,13 +8,13 @@ analyze_failures.py
 
 用法:
   python scripts/analyze_failures.py \
-    --pred_dir /home/pumengyu/experiments/analysis/ckpt_A/test/03-29-13-33-35/pred_pt \
-    --out_dir  /home/pumengyu/experiments/analysis/ckpt_A/test/analysis
+    --pred_dir /home/PuMengYu/MSD_LiverTumorSeg/experiments/analysis/ckpt_A/test/03-29-13-33-35/pred_pt \
+    --out_dir  /home/PuMengYu/MSD_LiverTumorSeg/experiments/analysis/ckpt_A/test/analysis
   
     
     python scripts/analyze_failures.py \
-     --pred_dir /home/pumengyu/experiments/analysis/ckpt_B/test/03-30-23-47-04/pred_pt \
-     --out_dir  /home/pumengyu/experiments/analysis/ckpt_B/test/analysis
+     --pred_dir /home/PuMengYu/MSD_LiverTumorSeg/experiments/analysis/ckpt_B/test/03-30-23-47-04/pred_pt \
+     --out_dir  /home/PuMengYu/MSD_LiverTumorSeg/experiments/analysis/ckpt_B/test/analysis
 
     
 

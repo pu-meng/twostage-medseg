@@ -5,9 +5,9 @@
 验证 实验10 best.pt(04-02-16-03-10):
 
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_twostage.py \
-  --medseg_root /home/pumengyu/medseg_project \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
-  --stage1_ckpt /home/pumengyu/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
   --stage2_ckpt  \
   --stage1_model dynunet --stage2_model dynunet_ca \
   --stage1_patch 144 144 144 --stage2_patch 128 128 128 \

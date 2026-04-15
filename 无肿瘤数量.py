@@ -1,7 +1,7 @@
 import torch
 from pathlib import Path
 
-root = "/home/pumengyu/Task03_Liver_pt"
+root = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt"
 paths = list(Path(root).glob("*.pt"))
 neg = sum(
     1
