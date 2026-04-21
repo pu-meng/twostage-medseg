@@ -27,7 +27,7 @@ def apply_postprocess(stage2_np, liver_filled_np, min_tumor_size):
     tumor = (stage2_np == 1) & (liver_filled_np == 1)
     # 2. 去除小连通域
     if min_tumor_size > 0:
-        labeled, n = ndi.label(tumor)
+        labeled, n = ndi.label(tumor) #type:ignore
         for i in range(1, n + 1):
             if (labeled == i).sum() < min_tumor_size:
                 tumor[labeled == i] = False
@@ -75,7 +75,7 @@ def main():
     print()
 
     # --- 连通域分析（liver_filled 约束后） ---
-    labeled, n_comp = ndi.label(tumor_in_liver)
+    labeled, n_comp = ndi.label(tumor_in_liver) #type:ignore
     comp_sizes = sorted(
         [(i + 1, int((labeled == i + 1).sum())) for i in range(n_comp)],
         key=lambda x: -x[1],

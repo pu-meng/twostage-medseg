@@ -14,7 +14,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_stage1_tumor_recall.py \
   --val_ratio 0.2 \
   --test_ratio 0.1 \
   --seed 0 \
-  --split test
+  --split val
+
+  
 """
 from __future__ import annotations
 
@@ -22,7 +24,6 @@ import argparse
 import os
 import sys
 import random
-
 import numpy as np
 import torch
 from monai.inferers.utils import sliding_window_inference

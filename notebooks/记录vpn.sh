@@ -11,6 +11,14 @@ curl http://127.0.0.1:9091/proxies  # 常见面板端口，试试
 curl http://127.0.0.1:9090/proxies
 
 
+ps aux | grep -i clash
+
+ss -tlnp | grep -E '7890|7891|7892'
+# 或者
+netstat -tlnp 2>/dev/null | grep clash
+
+
+
 curl -X PUT http://127.0.0.1:9090/proxies/GLOBAL \
   -H "Content-Type: application/json" \
   -d '{"name":"🇺🇸 美国 ·原生 03"}'
@@ -24,8 +32,15 @@ ps aux | grep clash
 # 2. 每个clash的API端口和代理端口
 sudo grep -E "external-controller|mixed-port" /path/to/each/config.yaml
 ss -tlnp | grep clash
-# 或
-ss -tlnp | grep 789
+
+
+curl -s --noproxy '*' http://127.0.0.1:9090/proxies | python3 -m json.tool | grep -E '"name":|"now":' | head -40
+
+
+# 获取所有节点名
+
+
+
 # 3. 挨个端口测哪个能通
 for port in 7890 7891 7892; do
   result=$(curl -s -x http://127.0.0.1:$port https://api.anthropic.com \

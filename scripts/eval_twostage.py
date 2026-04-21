@@ -31,12 +31,28 @@ import sys
 import time
 from typing import Dict, List
 
+# 提前将 medseg_root 加入 sys.path，以便后续 import medseg
+def _early_add_medseg_to_syspath():
+    _home = os.path.expanduser("~")
+    default_root = os.path.join(_home, "MSD_LiverTumorSeg", "medseg_project")
+    # 从 sys.argv 中快速查找 --medseg_root 参数
+    for i, arg in enumerate(sys.argv):
+        if arg == "--medseg_root" and i + 1 < len(sys.argv):
+            default_root = sys.argv[i + 1]
+            break
+    # 加入 medseg_project 的父目录，使得 import medseg_project.medseg.xxx 可用
+    root = os.path.abspath(os.path.dirname(default_root))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
+_early_add_medseg_to_syspath()
+
 import torch
 from monai.inferers.utils import sliding_window_inference
-from medseg.models.build_model import build_model
-from medseg.utils.ckpt import load_ckpt
+from medseg.models.build_model import build_model  #type: ignore
+from medseg.utils.ckpt import load_ckpt  #type: ignore
 
-from medseg.data.dataset_offline import split_two_with_monitor
+from medseg.data.dataset_offline import split_two_with_monitor #type: ignore
 
 # twostage_medseg/metrics/filter.py
 from twostage_medseg.metrics.filter import filter_largest_component
@@ -79,6 +95,12 @@ def parse_args():
         default=0.5,
         help="Model B 的融合权重,Model A = 1 - weight_b",
     )
+    p.add_argument(
+        "--stage2_ckpt_b_in_channels",
+        type=int,
+        default=None,
+        help="Model B 的输入通道数,不指定则与 Model A 相同",
+    )
 
     p.add_argument("--stage1_model", type=str, default="dynunet")
     p.add_argument("--stage2_model", type=str, default="dynunet")
@@ -89,8 +111,8 @@ def parse_args():
     p.add_argument("--stage1_sw_batch_size", type=int, default=1)
     p.add_argument("--stage2_sw_batch_size", type=int, default=1)
 
-    p.add_argument("--overlap", type=float, default=0.5)
-    p.add_argument("--margin", type=int, default=12)
+    p.add_argument("--overlap", type=float, default=0.75)
+    p.add_argument("--margin", type=int, default=20)
 
     p.add_argument("--val_ratio", type=float, default=0.2)
     p.add_argument("--test_ratio", type=float, default=0.1)
@@ -412,7 +434,7 @@ def main():
 
     # stage1 ckpt 是 deep_supervision=False 训练的,推理时也用 False
     if args.stage1_model in ["dynunet", "nnunet"]:
-        from medseg.models.dynunet import build_dynunet
+        from medseg.models.dynunet import build_dynunet  #type: ignore
 
         stage1 = build_dynunet(
             in_channels=1, out_channels=args.stage1_out_channels, deep_supervision=False
@@ -442,9 +464,10 @@ def main():
         stage2.eval()
 
         if args.stage2_ckpt_b is not None:
+            stage2_b_in_channels = args.stage2_ckpt_b_in_channels if args.stage2_ckpt_b_in_channels is not None else stage2_in_channels
             stage2_b = build_model(
                 args.stage2_model,
-                in_channels=stage2_in_channels,
+                in_channels=stage2_b_in_channels,
                 out_channels=2,
                 img_size=tuple(args.stage2_patch),
             ).to(device)
@@ -521,10 +544,12 @@ def main():
                 logits1
             )  # 防御性:确保是 tensor(autocast 可能返回其他类型)
             # argmax 在 channel 维取最大值 → 每个 voxel 得到类别 id (0 或 1)
-            prob1 = torch.softmax(logits1.float(), dim=1)[0].cpu()  # [C,D,H,W]
+            #logits:[1,C,D,H,W] → prob1:[C,D,H,W],logits的C是类别数2或3,
+            #为什么logits1的B=1,因为是单样本推理,评估时是一个case一个case处理
+            prob1 = torch.softmax(logits1.float(), dim=1)[0].cpu()  
             pred1 = torch.argmax(logits1.float(), dim=1)[
                 0
-            ].cpu()  # [1,C,D,H,W] → [D,H,W]
+            ].cpu()  # [1,C,D,H,W] → [D,H,W] 
             liver_mask = pred1 == 1  # [D,H,W] bool,True 的位置就是预测的肝脏
             # 软概率：stage1三分类时取channel2的softmax概率图，而非hard mask
             # 训练时第二通道是GT 0/1，推理时用软概率（0~1），分布更接近
@@ -540,6 +565,7 @@ def main():
             if args.stage1_only:
                 bbox = None
                 tumor_full = (pred1 == 2).long()  # Stage1 直接输出的粗糙肿瘤
+                prob2_full = torch.zeros(pred1.shape, dtype=torch.float32)
             # ================================================================
             # STAGE 2:肿瘤分割(在裁剪出的肝脏 ROI 上滑动窗口推理)
             # 依赖 Stage1 结果:必须先有 liver_mask 才能知道裁哪里
@@ -548,6 +574,7 @@ def main():
                 # Stage1 没有预测出任何肝脏(极少数情况),则肿瘤直接置全零
                 bbox = None
                 tumor_full = torch.zeros_like(pred1, dtype=torch.long)
+                prob2_full = torch.zeros(pred1.shape, dtype=torch.float32)
             else:
                 # 根据肝脏 mask 计算 3D bounding box,并向外扩 margin 个 voxel
                 # bbox 格式:((z0,z1),(y0,y1),(x0,x1))
@@ -609,9 +636,18 @@ def main():
                     if stage2_b is not None:
                         # 如果提供了第二个 Stage2 模型(模型 B),用相同输入再推理一次
                         # 后续会将 A 和 B 的 logits 加权平均(ensemble),提升稳定性
+                        if stage2_b_in_channels == 2 and x_roi.shape[1] == 1:
+                            # 模型B需要2通道但当前x_roi是1通道,拼接coarse_tumor_prob
+                            if coarse_tumor_prob is not None:
+                                tumor_roi_b = crop_3d(coarse_tumor_prob.unsqueeze(0), bbox)
+                            else:
+                                tumor_roi_b = torch.zeros_like(image_roi)
+                            x_roi_b = torch.cat([image_roi, tumor_roi_b], dim=0).unsqueeze(0).to(device)
+                        else:
+                            x_roi_b = x_roi
                         if not args.no_tta:
                             logits2_b = tta_sliding_window_inference(
-                                inputs=x_roi,
+                                inputs=x_roi_b,
                                 roi_size=tuple(args.stage2_patch),
                                 sw_batch_size=args.stage2_sw_batch_size,
                                 predictor=stage2_b,
@@ -619,7 +655,7 @@ def main():
                             )
                         else:
                             logits2_b = sliding_window_inference(
-                                inputs=x_roi,
+                                inputs=x_roi_b,
                                 roi_size=tuple(args.stage2_patch),
                                 sw_batch_size=args.stage2_sw_batch_size,
                                 predictor=stage2_b,  # Stage2 肿瘤分割模型 B

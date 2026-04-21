@@ -1,0 +1,15 @@
+CUDA_VISIBLE_DEVICES=1 /home/PuMengYu/anaconda3/envs/medseg/bin/python scripts/eval_twostage.py \
+  --medseg_root /home/PuMengYu/MSD_LiverTumorSeg/medseg_project \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_roi \
+  --stage1_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_only/train/03-14-01-11-56/best.pt \
+  --stage2_ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/twostage/focaltversky_deep_p160_sgd_ratio04/train/04-13-08-47-34/best.pt \
+  --stage1_model dynunet \
+  --stage2_model dynunet_deep \
+  --stage1_patch 144 144 144 \
+  --stage2_patch 160 160 160 \
+  --val_ratio 0.2 \
+  --test_ratio 0.1 \
+  --seed 0 \
+  --split test \
+  --overlap 0.5 \
+  --small_tumor_low_thresh 0.2

@@ -9,10 +9,10 @@ from datetime import datetime
 import warnings as _w
 from pathlib import Path as _Path
 
-# Add medseg_project to path so `medseg` package can be found
-_medseg_project = str(_Path(__file__).resolve().parents[2] / "medseg_project")
-if _medseg_project not in sys.path:
-    sys.path.insert(0, _medseg_project)
+# Add MSD_LiverTumorSeg to path so `medseg_project.medseg` can be found
+_medseg_parent = str(_Path(__file__).resolve().parents[2])
+if _medseg_parent not in sys.path:
+    sys.path.insert(0, _medseg_parent)
 
 from monai.inferers.utils import sliding_window_inference
 from twostage_medseg.metrics.filter import filter_largest_component
@@ -21,36 +21,36 @@ from twostage_medseg.twostage.roi_utils import compute_bbox_from_mask
 import torch
 from torch.utils.data import DataLoader
 from monai.data.utils import list_data_collate
-from medseg.data.dataset_offline import load_pt_paths, split_two_with_monitor
-from medseg.data.transforms_offline import (
+from medseg_project.medseg.data.dataset_offline import load_pt_paths, split_two_with_monitor
+from medseg_project.medseg.data.transforms_offline import (
     build_train_transforms,
     build_val_transforms,
 )
-from medseg.engine.train_eval import (
+from medseg_project.medseg.engine.train_eval import (
     train_one_epoch_sigmoid_binary,
     validate_sliding_window,
 )
-from medseg.models.build_model import build_model
+from medseg_project.medseg.models.build_model import build_model
 
-from medseg.engine.adaptive_loss import (
+from medseg_project.medseg.engine.adaptive_loss import (
     train_one_epoch_binary_learnable,
     LearnableWeightedLoss,
 )
 
 from twostage_medseg.metrics.DiagLogger import DiagLogger
-from medseg.utils.ckpt import (
+from medseg_project.medseg.utils.ckpt import (
     load_ckpt_full,
     save_ckpt_full,
 )
 
-from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
+from medseg_project.medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
-from medseg.utils.train_utils import set_seed
+from medseg_project.medseg.utils.train_utils import set_seed
 from twostage_medseg.twostage.train_logger import TrainLoggerTwoStage
 from twostage_medseg.twostage.dataset_tumor_roi import TumorROIDataset
 from twostage_medseg.twostage.train_eval_tumor import tumor_metrics_from_val_result
 
-"""
+"""proj
 os.path.abspath(medseg_root)
 把相对路径变为绝对路径; 比如
 输入: medseg
@@ -65,9 +65,10 @@ margin是肿瘤裁剪向外扩展的像素数
 
 
 def add_medseg_to_syspath(medseg_root: str) -> None:
-    medseg_root = os.path.abspath(medseg_root)
-    if medseg_root not in sys.path:
-        sys.path.insert(0, medseg_root)
+    # medseg_root 是 medseg_project 路径，需加其父目录使 medseg_project.medseg 可导入
+    parent = os.path.abspath(os.path.dirname(medseg_root))
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
 
 
 def parse_args():
@@ -152,7 +153,7 @@ def parse_args():
         "--loss",
         type=str,
         default="dicece",
-        choices=["dicece", "dicefocal", "tversky", "focaltversky"],
+        choices=["dicece", "dicefocal", "tversky", "focaltversky", "dicece_focaltversky"],
     )
     p.add_argument("--val_every", type=int, default=5)
     p.add_argument("--seed", type=int, default=0)
@@ -502,8 +503,8 @@ def build_coarse_tumor_cache(
     格式: {case_name: Tensor[1, D, H, W] float}，坐标系与 .pt 文件对齐（已做 crop_bbox 偏移）。
     验证集用此 cache 作为 Ch2，替代 GT mask，消除 train/val 分布差异。
     """
-    from medseg.models.build_model import build_model
-    from medseg.utils.ckpt import load_init_weights
+    from medseg_project.medseg.models.build_model import build_model
+    from medseg_project.medseg.utils.ckpt import load_init_weights
 
     if stage1_out_channels != 3:
         print("[coarse_tumor_cache] stage1_out_channels!=3, 无法生成软概率, 返回空 cache")
@@ -542,7 +543,7 @@ def build_coarse_tumor_cache(
                 logits = logits[0]
 
             # 取 channel 2（tumor）的 softmax 软概率，[D, H, W] → [1, D, H, W]
-            prob = torch.softmax(logits.float(), dim=1)[0, 2].cpu().unsqueeze(0)  # [1, D, H, W]
+            prob = torch.softmax(logits.float(), dim=1)[0, 2].cpu().unsqueeze(0)  # [1, D, H, W] #type:ignore
             cache[case_name] = prob
 
             if (i + 1) % 5 == 0 or (i + 1) == len(pt_paths):
@@ -846,7 +847,7 @@ def main():
     scaler = torch.cuda.amp.GradScaler() if args.amp and device == "cuda" else None
 
     # 提前构建 loss_fn，避免每 epoch 重建（节省少量 Python 开销）
-    from medseg.engine.train_eval import build_loss_fn_binary
+    from medseg_project.medseg.engine.train_eval import build_loss_fn_binary
     _loss_fn = build_loss_fn_binary(args.loss) if not args.learnable_loss else None
 
     start_epoch = 1
